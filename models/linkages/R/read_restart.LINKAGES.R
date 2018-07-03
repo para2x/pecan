@@ -9,7 +9,7 @@
 
 ##' @title read_restart.LINKAGES
 ##' @name  read_restart.LINKAGES
-##' @author Ann Raiho \email{araiho@@nd.edu}
+##' @author Ann Raiho \email{araiho@@nd.edu} & Hamze Dokoohaki \email{hamzed@bu.edu}
 ##' 
 ##' @param outdir      output directory
 ##' @param runid       run ID
@@ -22,7 +22,13 @@
 ##' @return X.vec      vector of forecasts
 ##' @export
 ##' 
-read_restart.LINKAGES <- function(outdir, runid, stop.time, settings, var.names = NULL, params = NULL) {
+read_restart.LINKAGES <- function(outdir, runid, stop.time, settings, var.names = NULL, params = NULL,
+                                  var.map=list(c('AGB.pft','TotSoilCarb'),
+                                               c('AGB.pft','TotSoilCarb'), # what we want
+                                               c('',''), # unit in
+                                               c('',''), #unit out
+                                               c('','') #preprocess function. Sending the function explicitly                                
+                                  )) {
   
   # Read ensemble output
   ens <- read.output(runid = runid, 
@@ -30,7 +36,8 @@ read_restart.LINKAGES <- function(outdir, runid, stop.time, settings, var.names 
                      start.year = lubridate::year(stop.time), 
                      end.year = lubridate::year(stop.time), 
                      variables = var.names)  # change to just 'AGB' for plot level biomass
-  if(!is.na(ens)){
+
+
   # Add PFT name to variable if applicable
   pft.names <- numeric(length(settings$pfts))
   for (i in seq_along(settings$pfts)) {
@@ -38,37 +45,35 @@ read_restart.LINKAGES <- function(outdir, runid, stop.time, settings, var.names 
   }
   #ens.pft.names <- grep("pft", names(ens))
   #names(ens[[grep("pft", names(ens))]]) <- pft.names
-  
-  forecast <- list()
 
-  if ("Fcomp" %in% var.names) {
-    forecast[[length(forecast)+1]] <- ens$AGB.pft #already has C  #* unit.conv 
-    names(forecast[[length(forecast)+1]]) <- paste0('Fcomp.',pft.names)
-  }
-  
-  if ("AGB.pft" %in% var.names) {
-    forecast[[length(forecast)+1]] <- ens$AGB.pft #already has C  #* unit.conv 
-    names(forecast[[length(forecast)+1]]) <- paste0('AGB.pft.',pft.names)
-  }
-    
-  if ("TotSoilCarb" %in% var.names) {
-    forecast[[length(forecast)+1]] <- ens$TotSoilCarb #udunits2::ud.convert(ens$TotSoilCarb, "kg/m^2", "Mg/ha") #* unit.conv 
-    names(forecast[[length(forecast)+1]]) <- c("TotSoilCarb")
-  }
-  
-  }else{
-    forecast <- list()
-    if ("AGB.pft" %in% var.names) {
-      forecast[[length(forecast)+1]] <- rep(NA,length(settings$pfts))
-    }
-    if ("Fcomp" %in% var.names) {
-      forecast[[length(forecast)+1]] <- rep(NA,length(settings$pfts)) #already has C  #* unit.conv
-    }
-    if ("TotSoilCarb" %in% var.names) {
-      forecast[[length(forecast)+1]] <- NA
-    }
-  }
+  forecast <- list()
+  #The first vector in the arg is the model's title names for outputs and second is what we wanted it to be
+  # the third and fourth are the units in and out
+  purrr::pwalk(var.map,
+               function(modelT,ForcastT,unit.in,unit.out,FUN){
+                 if(modelT%in%names(ens)){
+                   # doing the proprocess - if we need to take mean or etc
+                   if(typeof(FUN)!='character'){
+                     preproc.val<-FUN(unlist(ens[[modelT]]))
+                   } else{
+                     preproc.val<-unlist(ens[[modelT]])
+                   }
+                
+                   #do the unit conversion
+                   if(unit.in!=''){
+                      value<-udunits2::ud.convert(preproc.val,unit.in,unit.out)
+                   }else{
+                     value<-preproc.val
+                   }
+                   #see how many ouputs are genrated. as many as the pfts ?
+                   if(length(value)==length(pft.names)){nns<-paste0(ForcastT,pft.names)}else{nns<-ForcastT}
+                   # store it back to forecast
+                   forecast<<-c(forecast,setNames(value,nns))
+                 }          
+                 
+               })
+ 
   # Put forecast into vector
   print(runid)
-  unlist(forecast)
+  return(list(unlist(forecast),NULL))
 }

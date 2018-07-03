@@ -10,26 +10,36 @@
 ##' @param adjustment  flag for using ensemble adjustment filter or not
 ##' @param restart      Used for iterative updating previous forecasts. This is a list that includes ens.inputs, the list of inputs by ensemble member, params, the parameters, and old_outdir, the output directory from the previous workflow. These three things are needed to ensure that if a new workflow is started that ensemble members keep there run-specific met and params. See Details
 ##'
-##? @details
-##? Restart mode:  Basic idea is that during a restart (primary case envisioned as an iterative forecast), a new workflow folder is created and the previous forecast for the start_time is copied over. During restart the initial run before the loop is skipped, with the info being populated from the previous run. The function then dives right into the first Analysis, then continues on like normal.
+##’ @details
+##’ Restart mode:  Basic idea is that during a restart (primary case envisioned as an iterative forecast), a new workflow folder is created and the previous forecast for the start_time is copied over. During restart the initial run before the loop is skipped, with the info being populated from the previous run. The function then dives right into the first Analysis, then continues on like normal.
 ##' 
 ##' @description State Variable Data Assimilation: Ensemble Kalman Filter
 ##' 
 ##' @return NONE
 ##' @export
 ##' 
-sda.enkf <- function(settings, obs.mean, obs.cov, IC = NULL, Q = NULL, adjustment = TRUE, restart=NULL) {
-  
-  library(nimble)
-  
+sda.enkf.refactored <- function(settings, obs.mean, obs.cov, IC = NULL, Q = NULL, adjustment = TRUE, restart=NULL) {
+  #My personal notes -----------------------
+  # Three analysis function was initially developed into this:
+  # 1-EnKF
+  # 2-Generalized Ensubmle Filter: -tobit / -wish 
+  #------------- Some important variables  
+  # muf/Pf - forcast mean and covariance
+  # Y/R    - Observed data and covariance
+  # mu.a/Pa  - afetr analysis - new mean and covariance
+  # nt is the length of observed  
+  # When processvar == FALSE it means we are doin EnKF and it's TRUE Generlized Ensumble Filter
+  # Generlized Ensumble Filter NEEDS process variance to avoid filter divergence and it does not
+  # have analytical solution - needs MCMC
+  # X stores IC of state variables and then collects state variables in each loop
+  # Y stores the observed mean
+  #------------------------  
   ymd_hms <- lubridate::ymd_hms
   hms     <- lubridate::hms
   second  <- lubridate::second
-  
   ###-------------------------------------------------------------------###
   ### read settings                                                     ###
   ###-------------------------------------------------------------------### 
-  
   model      <- settings$model$type
   write      <- settings$database$bety$write
   defaults   <- settings$pfts
@@ -89,13 +99,12 @@ sda.enkf <- function(settings, obs.mean, obs.cov, IC = NULL, Q = NULL, adjustmen
   }else {
     ens.inputs <- restart$ens.inputs
   }
-  no_split<-T # hamze
+
   inputs <- list()
-  ens.inputs<-settings$run$inputs$met[["path"]]
   for(i in seq_len(nens)){
     
     if(no_split){
-      inputs[[i]] <- ens.inputs[[1]] # passing settings$run$inputs$met$path is the same thing, just following the logic despite the hack above
+      inputs[[i]] <- ens.inputs[[i]] # passing settings$run$inputs$met$path is the same thing, just following the logic despite the hack above
     }else{
       ### get only necessary ensemble inputs. Do not change in analysis
       #ens.inputs[[i]] <- get.ensemble.inputs(settings = settings, ens = sampleIDs[i])
@@ -195,7 +204,7 @@ sda.enkf <- function(settings, obs.mean, obs.cov, IC = NULL, Q = NULL, adjustmen
     if ("env" %in% names(ensemble.samples)) {
       ensemble.samples$env <- NULL
     }
-#------------------ For making the ensembuls this makes the new params - trait values    
+    
     params <- list()
     for (i in seq_len(nens)) {
       if (sample_parameters == TRUE) {
@@ -284,7 +293,7 @@ sda.enkf <- function(settings, obs.mean, obs.cov, IC = NULL, Q = NULL, adjustmen
   
   ## start model runs
   if(is.null(restart)){
-    PEcAn.remote::start.model.runs(settings, write)
+    PEcAn.remote::start.model.runs(settings, settings$database$bety$write)
   }
   save(list = ls(envir = environment(), all.names = TRUE), 
        file = file.path(outdir, "sda.initial.runs.Rdata"), envir = environment())
@@ -324,7 +333,7 @@ sda.enkf <- function(settings, obs.mean, obs.cov, IC = NULL, Q = NULL, adjustmen
   # restart time is not provided restart in stop time
   
   ###-------------------------------------------------------------------###
-  ### set up for data assimilation                                      ###
+  ### set up for data assimilation                                      ###-----
   ###-------------------------------------------------------------------###  
   
   nt          <- length(obs.times)
@@ -348,89 +357,10 @@ sda.enkf <- function(settings, obs.mean, obs.cov, IC = NULL, Q = NULL, adjustmen
     (Om[i, j]^2 + Om[i, i] * Om[j, j]) / var(X[, col])
   }
   
-  sampler_toggle <- nimbleFunction(
-    contains = sampler_BASE,
-    setup = function(model, mvSaved, target, control) {
-      type <- control$type
-      nested_sampler_name <- paste0('sampler_', type)
-      control_new <- nimbleOptions('MCMCcontrolDefaultList')
-      control_new[[names(control)]] <- control
-      nested_sampler_list <- nimbleFunctionList(sampler_BASE)
-      nested_sampler_list[[1]] <- do.call(nested_sampler_name, list(model, mvSaved, target, control_new))
-      toggle <- 1
-    },
-    run = function() {
-      if(toggle == 1)
-        nested_sampler_list[[1]]$run()
-    },
-    methods = list(
-      reset = function()
-        nested_sampler_list[[1]]$reset()
-    )
-  )
-  
   if(var.names=="Fcomp"){
-    y_star_create <-  nimbleFunction(
-      run = function(X = double(1)) {
-        returnType(double(1))
-        
-        X_use <- X
-        X_use[X_use<0] <- 0
-        y_star <- X_use/sum(X_use)
-        
-        return(y_star)
-      })
-  }else{
-    y_star_create <-  nimbleFunction(
-      run = function(X = double(1)) {
-        returnType(double(1))
-        
-        y_star <- X
-        
-        return(y_star)
-      })
+    y_star_create<-y_star_create_Fcomp
   }
-  
-  
-  tobit.model <- nimbleCode({ 
-    
-    q[1:N,1:N]  ~ dwish(R = aq[1:N,1:N], df = bq) ## aq and bq are estimated over time
-    Q[1:N,1:N] <- inverse(q[1:N,1:N])
-    X.mod[1:N] ~ dmnorm(muf[1:N], prec = pf[1:N,1:N]) ## Model Forecast ##muf and pf are assigned from ensembles
-    
-    ## add process error
-    X[1:N]  ~ dmnorm(X.mod[1:N], prec = q[1:N,1:N])
-    
-    #observation operator
-    y_star[1:YN] <- y_star_create(X[1:YN])
-    
-    ## Analysis
-    y.censored[1:YN] ~ dmnorm(y_star[1:YN], prec = r[1:YN,1:YN]) #is it an okay assumpution to just have X and Y in the same order?
-    
-    #don't flag y.censored as data, y.censored in inits
-    #remove y.censored samplers and only assign univariate samplers on NAs
-    
-    for(i in 1:YN){
-      y.ind[i] ~ dinterval(y.censored[i], 0)
-    }
-    
-  })
-  
-  tobit2space.model <- nimbleCode({
-    for(i in 1:N){
-      y.censored[i,1:J] ~ dmnorm(muf[1:J], cov = pf[1:J,1:J])
-      for(j in 1:J){
-        y.ind[i,j] ~ dinterval(y.censored[i,j], 0)
-      }
-    }
-    
-    muf[1:J] ~ dmnorm(mean = mu_0[1:J], cov = pf[1:J,1:J])
-    
-    Sigma[1:J,1:J] <- lambda_0[1:J,1:J]/nu_0
-    pf[1:J,1:J] ~ dinvwish(S = Sigma[1:J,1:J], df = J)
-    
-  })
-  
+
   t1         <- 1
   pink       <- col2rgb("deeppink")
   alphapink  <- rgb(pink[1], pink[2], pink[3], 180, max = 255)
@@ -447,12 +377,12 @@ sda.enkf <- function(settings, obs.mean, obs.cov, IC = NULL, Q = NULL, adjustmen
   wt.mat <- matrix(NA, nrow = nens, ncol = nt)
   
   ###-------------------------------------------------------------------###
-  ### loop over time                                                    ###
+  ### loop over time                                                    ###----
   ###-------------------------------------------------------------------### 
   
   for(t in seq_len(nt)) {
     ###-------------------------------------------------------------------###
-    ### read restart                                                      ###
+    ### read restart                                                      ### ----
     ###-------------------------------------------------------------------###  
     X_tmp <- vector("list", 2) 
     X <- list()
@@ -484,7 +414,7 @@ sda.enkf <- function(settings, obs.mean, obs.cov, IC = NULL, Q = NULL, adjustmen
     diag(Pf)[pmiss] <- 0.1 ## hack for zero variance
     
     ###-------------------------------------------------------------------###
-    ### analysis                                                          ###
+    ### analysis                                                          ###----
     ###-------------------------------------------------------------------###  
     if (any(obs)) {
       # if no observations skip analysis
@@ -511,335 +441,18 @@ sda.enkf <- function(settings, obs.mean, obs.cov, IC = NULL, Q = NULL, adjustmen
       }
       
       ### TO DO: plotting not going to work because of observation operator i.e. y and x are on different scales
-      
-      
-      #### Plot Data and Forecast
-      if (FALSE) {#interactive() & t > 1
-        t1 <- 1
-        names.y <- unique(unlist(lapply(obs.mean[t1:t], function(x) { names(x) })))
-        Ybar <- t(sapply(obs.mean[t1:t], function(x) {
-          tmp <- rep(NA, length(names.y))
-          names(tmp) <- names.y
-          mch <- match(names(x), names.y)
-          tmp[mch] <- x[mch]
-          return(tmp)
-        }))
-        
-        Ybar <- Ybar[, na.omit(pmatch(colnames(X), colnames(Ybar)))]
-        YCI <- t(as.matrix(sapply(obs.cov[t1:t], function(x) {
-          if (is.null(x)) {
-            return(rep(NA, length(names.y)))
-          }
-          return(sqrt(diag(x)))
-        })))
-        
-        for (i in sample(x = 1:ncol(X), size = 2)) {
-          t1 <- 1
-          Xbar <- plyr::laply(FORECAST[t1:t], function(x) { mean(x[, i], na.rm = TRUE) })
-          Xci <- plyr::laply(FORECAST[t1:t], function(x) { quantile(x[, i], c(0.025, 0.975)) })
-          
-          plot(as.Date(obs.times[t1:t]), 
-               Xbar, 
-               ylim = range(c(Ybar, Xci), na.rm = TRUE),
-               type = "n", 
-               xlab = "Year", 
-               ylab = "kg/m^2",
-               main = colnames(X)[i])
-          
-          # observation / data
-          if (i <= ncol(Ybar)) {
-            ciEnvelope(as.Date(obs.times[t1:t]), 
-                       as.numeric(Ybar[, i]) - as.numeric(YCI[, i]) * 1.96, 
-                       as.numeric(Ybar[, i]) + as.numeric(YCI[, i]) * 1.96, 
-                       col = alphagreen)
-            lines(as.Date(obs.times[t1:t]), as.numeric(Ybar[, i]), type = "l", 
-                  col = "darkgreen", lwd = 2)
-          }
-          
-          # forecast
-          ciEnvelope(as.Date(obs.times[t1:t]), Xci[, 1], Xci[, 2], col = alphablue)  # col='lightblue')
-          lines(as.Date(obs.times[t1:t]), Xbar, col = "darkblue", type = "l", lwd = 2)
-        }
-      }
-      
       ###-------------------------------------------------------------------###
-      ### Kalman Filter                                                     ###
+      ### Analysis                                                          ###----
       ###-------------------------------------------------------------------###
-      if (processvar == FALSE) {
-        ## design matrix
-        H <- matrix(0, length(Y), ncol(X)) #H maps true state to observed state
-        #linear
-        for (i in choose) {
-          H[i, i] <- 1
-        }
-        #non-linear fcomp
-        # for (i in choose) {
-        #   H[i, i] <- 1/sum(mu.f) #? this seems to get us on the right track. mu.f[i]/sum(mu.f) doesn't work. 
-        # }
-        ## process error
-        if (!is.null(Q)) {
-          Pf <- Pf + Q
-        }
-        
-        ## Kalman Gain
-        K <- Pf %*% t(H) %*% solve((R + H %*% Pf %*% t(H)))
-        # Analysis
-        mu.a <- mu.f + K %*% (Y - H %*% mu.f)
-        Pa   <- (diag(ncol(X)) - K %*% H) %*% Pf
-        enkf.params[[t]] <- list(mu.f = mu.f, Pf = Pf, mu.a = mu.a, Pa = Pa)
-        
-      } else {
-        
-        ### create matrix the describes the support for each observed state variable at time t
-        intervalX <- matrix(NA, ncol(X), 2)
-        rownames(intervalX) <- colnames(X)
-        #TO DO: Not working for fcomp
-        for(i in 1:length(var.names)){
-          intervalX[which(startsWith(rownames(intervalX),
-                                     var.names[i])), ] <- matrix(c(as.numeric(settings$state.data.assimilation$state.variables[[i]]$min_value),
-                                                                   as.numeric(settings$state.data.assimilation$state.variables[[i]]$max_value)),
-                                                                 length(which(startsWith(rownames(intervalX),
-                                                                                         var.names[i]))),2,byrow = TRUE)
-        }
-        
-        #### These vectors are used to categorize data based on censoring from the interval matrix
-        x.ind <- x.censored <- matrix(NA, ncol=ncol(X), nrow=nrow(X))
-        for(j in seq_along(mu.f)){
-          for(n in seq_len(nrow(X))){
-            x.ind[n,j] <- as.numeric(X[n,j] > 0)
-            x.censored[n,j] <- as.numeric(ifelse(X[n,j] > intervalX[j,2], 0, X[n,j])) #
-          }
-        }
-        
-        if(t == 1 | length(run.id) < nens){
-          #The purpose of this step is to impute data for mu.f 
-          #where there are zero values so that 
-          #mu.f is in 'tobit space' in the full model
-          constants.tobit2space = list(N = nrow(X),
-                                       J = length(mu.f))
-          
-          data.tobit2space = list(y.ind = x.ind,
-                                  y.censored = x.censored,
-                                  mu_0 = rep(0,length(mu.f)),
-                                  lambda_0 = diag(10,length(mu.f)),
-                                  nu_0 = 3)#some measure of prior obs
-          
-          inits.tobit2space = list(pf = Pf, muf = colMeans(X)) #pf = cov(X)
-          #set.seed(0)
-          #ptm <- proc.time()
-          tobit2space_pred <- nimbleModel(tobit2space.model, data = data.tobit2space,
-                                          constants = constants.tobit2space, inits = inits.tobit2space,
-                                          name = 'space')
-          ## Adding X.mod,q,r as data for building model.
-          conf_tobit2space <- configureMCMC(tobit2space_pred, thin = 10, print=TRUE)
-          conf_tobit2space$addMonitors(c("pf", "muf","y.censored")) 
-          ## [1] conjugate_dmnorm_dmnorm sampler: X[1:5]
-          ## important!
-          ## this is needed for correct indexing later
-          samplerNumberOffset_tobit2space <- length(conf_tobit2space$getSamplers())
-          
-          for(j in seq_along(mu.f)){
-            for(n in seq_len(nrow(X))){
-              node <- paste0('y.censored[',n,',',j,']')
-              conf_tobit2space$addSampler(node, 'toggle', control=list(type='RW'))
-              ## could instead use slice samplers, or any combination thereof, e.g.:
-              ##conf$addSampler(node, 'toggle', control=list(type='slice'))
-            }
-          }
-          
-          #conf_tobit2space$printSamplers()
-          
-          Rmcmc_tobit2space <- buildMCMC(conf_tobit2space)
-          
-          Cmodel_tobit2space <- compileNimble(tobit2space_pred)
-          Cmcmc_tobit2space <- compileNimble(Rmcmc_tobit2space, project = tobit2space_pred)
-          
-          for(i in seq_along(X)) {
-            ## ironically, here we have to "toggle" the value of y.ind[i]
-            ## this specifies that when y.ind[i] = 1,
-            ## indicator variable is set to 0, which specifies *not* to sample
-            valueInCompiledNimbleFunction(Cmcmc_tobit2space$samplerFunctions[[samplerNumberOffset_tobit2space+i]], 'toggle', 1-x.ind[i])
-          }
-          
-        }else{
-          Cmodel_tobit2space$y.ind <- x.ind
-          Cmodel_tobit2space$y.censored <- x.censored
-          
-          inits.tobit2space = list(pf = Pf, muf = colMeans(X))
-          Cmodel_tobit2space$setInits(inits.tobit2space)
-          
-          for(i in seq_along(X)) {
-            ## ironically, here we have to "toggle" the value of y.ind[i]
-            ## this specifies that when y.ind[i] = 1,
-            ## indicator variable is set to 0, which specifies *not* to sample
-            valueInCompiledNimbleFunction(Cmcmc_tobit2space$samplerFunctions[[samplerNumberOffset_tobit2space+i]], 'toggle', 1-x.ind[i])
-          }
-          
-        }
-        
-        set.seed(0)
-        dat.tobit2space <- runMCMC(Cmcmc_tobit2space, niter = 50000, progressBar=TRUE)
-        
-        pdf(file.path(outdir,paste0('1assessParams',t,'.pdf')))
-        
-        assessParams(dat = dat.tobit2space[1000:5000,], Xt = X)
-        dev.off()
-        
-        ## update parameters
-        dat.tobit2space  <- dat.tobit2space[1000:5000, ]
-        imuf   <- grep("muf", colnames(dat.tobit2space))
-        mu.f <- colMeans(dat.tobit2space[, imuf])
-        iPf   <- grep("pf", colnames(dat.tobit2space))
-        Pf <- matrix(colMeans(dat.tobit2space[, iPf]),ncol(X),ncol(X))
-        
-        iycens <- grep("y.censored",colnames(dat.tobit2space))
-        
-        X.new <- matrix(colMeans(dat.tobit2space[,iycens]),nrow(X),ncol(X))
-        
-        if(sum(diag(Pf)-diag(cov(X))) > 10 | sum(diag(Pf)-diag(cov(X))) < -10) logger.severe('Increase Sample Size')
-        
-        ###-------------------------------------------------------------------###
-        ### Generalized Ensemble Filter                                       ###
-        ###-------------------------------------------------------------------###
-        
-        #### initial conditions
-        bqq[1]     <- length(mu.f)
-        if(is.null(aqq)){
-          aqq      <- array(0, dim = c(nt,ncol(X),ncol(X)))
-        }else{
-          if(ncol(X)!=dim(aqq)[2]|ncol(X)!=dim(aqq)[3]){
-            print('error: X has changed dimensions')
-          }
-        }
-        aqq[1, , ] <- diag(length(mu.f)) * bqq[1] #Q
-        
-        ### create matrix the describes the support for each observed state variable at time t
-        interval <- matrix(NA, length(obs.mean[[t]]), 2)
-        rownames(interval) <- names(obs.mean[[t]])
-        for(i in 1:length(var.names)){
-          interval[which(startsWith(rownames(interval),
-                                    var.names[i])), ] <- matrix(c(as.numeric(settings$state.data.assimilation$state.variables[[i]]$min_value),
-                                                                  as.numeric(settings$state.data.assimilation$state.variables[[i]]$max_value)),
-                                                                length(which(startsWith(rownames(interval),
-                                                                                        var.names[i]))),2,byrow = TRUE)
-        }
-        #### These vectors are used to categorize data based on censoring 
-        #### from the interval matrix
-        y.ind <- as.numeric(Y > interval[,1])
-        y.censored <- as.numeric(ifelse(Y > interval[,1], Y, 0))
-        
-        if(t == 1){ #TO DO need to make something that works to pick weather to compile or not
-          constants.tobit = list(N = ncol(X), YN = length(y.ind))
-          dimensions.tobit = list(X = length(mu.f), X.mod = ncol(X),
-                                  Q = c(length(mu.f),length(mu.f)))
-          
-          data.tobit = list(muf = as.vector(mu.f),
-            pf = solve(Pf), 
-            aq = aqq[t,,], bq = bqq[t],
-            y.ind = y.ind,
-            y.censored = y.censored,
-            r = solve(R))
-          inits.pred = list(q = diag(length(mu.f)), X.mod = as.vector(mu.f),
-                            X = rnorm(length(mu.f),0,1)) #
-          
-          model_pred <- nimbleModel(tobit.model, data = data.tobit, dimensions = dimensions.tobit,
-                                    constants = constants.tobit, inits = inits.pred,
-                                    name = 'base')
-          ## Adding X.mod,q,r as data for building model.
-          conf <- configureMCMC(model_pred, print=TRUE)
-          conf$addMonitors(c("X","q","Q")) 
-          ## [1] conjugate_dmnorm_dmnorm sampler: X[1:5]
-          ## important!
-          ## this is needed for correct indexing later
-          samplerNumberOffset <- length(conf$getSamplers())
-          
-          for(i in 1:length(y.ind)) {
-            node <- paste0('y.censored[',i,']')
-            conf$addSampler(node, 'toggle', control=list(type='RW'))
-            ## could instead use slice samplers, or any combination thereof, e.g.:
-            ##conf$addSampler(node, 'toggle', control=list(type='slice'))
-          }
-          
-          conf$printSamplers()
-          
-          ## can monitor y.censored, if you wish, to verify correct behaviour
-          #conf$addMonitors('y.censored')
-          
-          Rmcmc <- buildMCMC(conf)
-          
-          Cmodel <- compileNimble(model_pred)
-          Cmcmc <- compileNimble(Rmcmc, project = model_pred)
-          
-          for(i in 1:length(y.ind)) {
-            ## ironically, here we have to "toggle" the value of y.ind[i]
-            ## this specifies that when y.ind[i] = 1,
-            ## indicator variable is set to 0, which specifies *not* to sample
-            valueInCompiledNimbleFunction(Cmcmc$samplerFunctions[[samplerNumberOffset+i]], 'toggle', 1-y.ind[i])
-          }
-          
-        }else{
-          Cmodel$y.ind <- y.ind
-          Cmodel$y.censored <- y.censored
-          Cmodel$aq <- aqq[t,,]
-          Cmodel$bq <- bqq[t]
-          Cmodel$muf <- mu.f
-          Cmodel$pf <- solve(Pf)
-          Cmodel$r <- solve(R)
-          
-          inits.pred = list(q = diag(length(mu.f)), X.mod = as.vector(mu.f),
-                            X = rnorm(ncol(X),0,1)) #
-          Cmodel$setInits(inits.pred)
-          
-          for(i in 1:length(y.ind)) {
-            ## ironically, here we have to "toggle" the value of y.ind[i]
-            ## this specifies that when y.ind[i] = 1,
-            ## indicator variable is set to 0, which specifies *not* to sample
-            valueInCompiledNimbleFunction(Cmcmc$samplerFunctions[[samplerNumberOffset+i]], 'toggle', 1-y.ind[i])
-          }
-          
-        }
-        
-        set.seed(0)
-        dat <- runMCMC(Cmcmc, niter = 50000)
-      
-        ## update parameters
-        dat  <- dat[10000:50000, ]
-        iq   <- grep("q", colnames(dat))
-        iX   <- grep("X[", colnames(dat), fixed = TRUE)
-        mu.a <- colMeans(dat[, iX])
-        Pa   <- cov(dat[, iX])
-        Pa[is.na(Pa)] <- 0
-        
-        CI.X1[, t] <- quantile(dat[, iX[1]], c(0.025, 0.5, 0.975))
-        CI.X2[, t] <- quantile(dat[, iX[2]], c(0.025, 0.5, 0.975))
-        
-        mq <- dat[, iq]  # Omega, Precision
-        q.bar <- matrix(apply(mq, 2, mean), length(mu.f), length(mu.f))  # Mean Omega, Precision
-        
-        col <- matrix(1:length(mu.f) ^ 2, length(mu.f), length(mu.f))
-        WV  <- matrix(0, length(mu.f), length(mu.f))
-        for (i in seq_along(mu.f)) {
-          for (j in seq_along(mu.f)) {
-            WV[i, j] <- wish.df(q.bar, X = mq, i = i, j = j, col = col[i, j])
-          }
-        }
-        
-        n <- mean(WV)
-        if (n < length(mu.f)) {
-          n <- length(mu.f)
-        }
-        V <- solve(q.bar) * n
-        
-        aqq[t + 1, , ]   <- V
-        bqq[t + 1]       <- n
-        enkf.params[[t]] <- list(mu.f = mu.f, Pf = Pf, mu.a = mu.a, 
-                                 Pa = Pa, q.bar = q.bar, n = n)
-        
-      }
+      #method=EnKF/GNF
+      enkf.params[[t]] <- ifelse(processvar == FALSE,
+                                  Analysis.sda(method="EnKF"),
+                                  Analysis.sda(method="GEF")
+                                  ) 
       
     } else {
       ###-------------------------------------------------------------------###
-      ### No Observations -- Starts Here                                    ###
+      ### No Observations -- Starts Here                                    ###----
       ###-------------------------------------------------------------------### 
       
       ### no process variance -- forecast is the same as the analysis ###
@@ -858,7 +471,7 @@ sda.enkf <- function(settings, obs.mean, obs.cov, IC = NULL, Q = NULL, adjustmen
       enkf.params[[t]] <- list(mu.f = mu.f, Pf = Pf, mu.a = mu.a, Pa = Pa)
     }
     ###-------------------------------------------------------------------###
-    ### update state matrix                                               ###
+    ### adjustement/update state matrix                                   ###----
     ###-------------------------------------------------------------------### 
     if(adjustment == TRUE){
       S_f  <- svd(Pf)
@@ -917,7 +530,9 @@ sda.enkf <- function(settings, obs.mean, obs.cov, IC = NULL, Q = NULL, adjustmen
     new.state  <- analysis
     
     ANALYSIS[[t]] <- analysis
+    ### Interactive plotting ------------------------------------------------------   
     if (interactive() & t > 1) { #
+     
       t1 <- 1
       names.y <- unique(unlist(lapply(obs.mean[t1:t], function(x) { names(x) })))
       Ybar <- t(sapply(obs.mean[t1:t], function(x) {
@@ -998,7 +613,7 @@ sda.enkf <- function(settings, obs.mean, obs.cov, IC = NULL, Q = NULL, adjustmen
     }
     #dev.off()
     ###-------------------------------------------------------------------###
-    ### forecast step                                                     ###
+    ### forecast step                                                     ###----
     ###-------------------------------------------------------------------### 
     if (t < nt) {
       
@@ -1050,11 +665,10 @@ sda.enkf <- function(settings, obs.mean, obs.cov, IC = NULL, Q = NULL, adjustmen
     save(t, FORECAST, ANALYSIS, enkf.params, file = file.path(settings$outdir, "sda.output.Rdata"))
 
     
-  }  ## end loop over time
+  } ### end loop over time
   ###-------------------------------------------
-  
   ###-------------------------------------------------------------------###
-  ### create diagnostics                                                ###
+  ### create diagnostics                                                ###-----
   ###-------------------------------------------------------------------### 
   
   ### LOAD CLIMATE ### HACK ### LINKAGES SPECIFIC
@@ -1068,10 +682,10 @@ sda.enkf <- function(settings, obs.mean, obs.cov, IC = NULL, Q = NULL, adjustmen
   }
   
   ###-------------------------------------------------------------------###
-  ### time series                                                       ###
+  ### time series plots                                                 ###-----
   ###-------------------------------------------------------------------### 
   
-  pdf(file.path(settings$outdir, "1sda.enkf.time-series.pdf"))
+  pdf(file.path(settings$outdir, "sda.enkf.time-series.pdf"))
   
   names.y <- unique(unlist(lapply(obs.mean[t1:t], function(x) { names(x) })))
   Ybar <- t(sapply(obs.mean[t1:t], function(x) {
@@ -1150,9 +764,9 @@ sda.enkf <- function(settings, obs.mean, obs.cov, IC = NULL, Q = NULL, adjustmen
   
   dev.off()
   ###-------------------------------------------------------------------###
-  ### bias diagnostics                                                  ###
+  ### bias diagnostics                                                  ###----
   ###-------------------------------------------------------------------###
-  pdf(file.path(settings$outdir, "1bias.diagnostic.pdf"))
+  pdf(file.path(settings$outdir, "bias.diagnostic.pdf"))
   for (i in seq_along(obs.mean[[1]])) {
     Xbar <- plyr::laply(FORECAST[t1:t], function(x) { mean(x[, i], na.rm = TRUE) })
     Xci <- plyr::laply(FORECAST[t1:t], function(x) { quantile(x[, i], c(0.025, 0.975)) })
@@ -1202,12 +816,12 @@ sda.enkf <- function(settings, obs.mean, obs.cov, IC = NULL, Q = NULL, adjustmen
   dev.off()
   
   ###-------------------------------------------------------------------###
-  ### process variance plots                                            ###
+  ### process variance plots                                            ###-----
   ###-------------------------------------------------------------------### 
   if (processvar) {
     
     library(corrplot)
-    pdf('1process.var.plots.pdf')
+    pdf('process.var.plots.pdf')
     
     cor.mat <- cov2cor(aqq[t,,] / bqq[t])
     colnames(cor.mat) <- colnames(X)
@@ -1251,3 +865,4 @@ sda.enkf <- function(settings, obs.mean, obs.cov, IC = NULL, Q = NULL, adjustmen
   #      ylab="Update",main=colnames(Ybar)[i])
   
 } # sda.enkf
+
