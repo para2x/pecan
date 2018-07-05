@@ -4,7 +4,7 @@ Analysis.sda<-function(settings,
                        Observed=list(R=NULL,Y=NULL)
                        ){
 #-----------------------------------Settup------------------------------------------------
-source('Nimbe_codes.R') # bringing in the library and the functions.
+source('/fs/data3/hamzed/pecan/modules/assim.sequential/R/Nimble_codes.R') # bringing in the library and the functions.
 #General
 var.names <- unlist(sapply(settings$state.data.assimilation$state.variable, 
                              function(x) {

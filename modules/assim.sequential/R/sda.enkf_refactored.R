@@ -118,15 +118,27 @@ sda.enkf.refactored <- function(settings, obs.mean, obs.cov, IC = NULL, Q = NULL
   ### loop over time                                                    ###----
   ###-------------------------------------------------------------------### 
   
-  for(t in seq_len(nt)) {
-    PEcAn.assim.sequential:::ensemble.gen(settings,settings$state.data.assimilation$n.ensemble)->ens.outputs
+  for(t in 1){#seq_len(nt)) {
     
-    
-    X <- do.call(rbind, X)
+    # do we have obs for this time - what year is it ?
+    obs <- which(!is.na(obs.mean[[t]]))
+    obs.year<-year(names(obs.mean)[t])
+    #- genereating the ensumbles
+    PEcAn.assim.sequential:::ensemble.gen(settings,settings$state.data.assimilation$n.ensemble)->ens.outs
+    ens.outputs<-ens.outs[[1]] # this is just the variables what would be left out is the params
+    #--- this could be expanded to find the exact date in ens.outputs
+    X<-lapply(ens.outputs,function(lis){
+      #take out the year of observation
+      (lis[[obs.year%>%as.character()]])[[1]]%>%unlist()
+      })
 
+
+    X <- do.call(rbind, X)
+    cat("----------\n")
+     print(X)   
     FORECAST[[t]] <- X
     
-    obs <- which(!is.na(obs.mean[[t]]))
+   
     
     mu.f <- as.numeric(apply(X, 2, mean, na.rm = TRUE))
     Pf <- cov(X)
@@ -166,8 +178,8 @@ sda.enkf.refactored <- function(settings, obs.mean, obs.cov, IC = NULL, Q = NULL
       ###-------------------------------------------------------------------###
       #method=EnKF/GNF
       enkf.params[[t]] <- ifelse(processvar == FALSE,
-                                  Analysis.sda(method="EnKF"),
-                                  Analysis.sda(method="GEF")
+                                 PEcAn.assim.sequential:::Analysis.sda(method="EnKF"),
+                                 PEcAn.assim.sequential:::Analysis.sda(method="GEF")
                                   ) 
       
     } else {
