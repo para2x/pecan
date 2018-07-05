@@ -28,7 +28,9 @@ read_restart.LINKAGES <- function(outdir, runid, stop.time, settings, var.names 
                                                c('',''), # unit in
                                                c('',''), #unit out
                                                c('','') #preprocess function. Sending the function explicitly                                
-                                  )) {
+                                  ),
+                                  timez="UTC",
+                                  When=NULL) {
   
   # Read ensemble output
   ens <- read.output(runid = runid, 
@@ -47,6 +49,7 @@ read_restart.LINKAGES <- function(outdir, runid, stop.time, settings, var.names 
   #names(ens[[grep("pft", names(ens))]]) <- pft.names
 
   forecast <- list()
+  
   #The first vector in the arg is the model's title names for outputs and second is what we wanted it to be
   # the third and fourth are the units in and out
   purrr::pwalk(var.map,

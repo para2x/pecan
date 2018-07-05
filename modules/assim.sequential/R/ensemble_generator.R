@@ -1,5 +1,5 @@
-ensemble.gen<-function(settings,nens=10,metF=F,paramsF=T,IC=NULL){
-
+ensemble.gen<-function(settings,nens=10,metF=F,paramsF=T,IC=NULL,When=NULL,timez="UTC"){
+  
   #-- read settings----------------------------------------------------
   model      <- settings$model$type
   write      <- settings$database$bety$write <-FALSE
@@ -8,7 +8,7 @@ ensemble.gen<-function(settings,nens=10,metF=F,paramsF=T,IC=NULL){
   rundir     <- settings$host$rundir
   host       <- settings$host
   forecast.time.step <- settings$state.data.assimilation$forecast.time.step  #idea for later generalizing
-#  nens       <- as.numeric(settings$state.data.assimilation$n.ensemble)
+  #  nens       <- as.numeric(settings$state.data.assimilation$n.ensemble)
   processvar <- settings$state.data.assimilation$process.variance
   sample_parameters <- settings$state.data.assimilation$sample.parameters
   var.names <- unlist(sapply(settings$state.data.assimilation$state.variable, 
@@ -19,7 +19,7 @@ ensemble.gen<-function(settings,nens=10,metF=F,paramsF=T,IC=NULL){
                       use.names = FALSE)
   names(var.names) <- NULL
   if (!is.null(rundir))
-  dir.create(rundir,recursive=TRUE) # remote will give warning
+    dir.create(rundir,recursive=TRUE) # remote will give warning
   #--get model specific functions
   do.call("require", list(paste0("PEcAn.", model)))
   my.write.config  <- paste0("write.config.", model)
@@ -104,31 +104,31 @@ ensemble.gen<-function(settings,nens=10,metF=F,paramsF=T,IC=NULL){
     
   }
   
-
+  
   cat('Here3 \n')
   #-- Load Parameters -------------------------------------------------
-    get.parameter.samples(settings, ens.sample.method = settings$ensemble$method)  ## Aside: if method were set to unscented, would take minimal changes to do UnKF
-    load(file.path(settings$outdir, "samples.Rdata"))  ## loads ensemble.samples
-
-    if ("env" %in% names(ensemble.samples)) {
-      ensemble.samples$env <- NULL
+  get.parameter.samples(settings, ens.sample.method = settings$ensemble$method)  ## Aside: if method were set to unscented, would take minimal changes to do UnKF
+  load(file.path(settings$outdir, "samples.Rdata"))  ## loads ensemble.samples
+  
+  if ("env" %in% names(ensemble.samples)) {
+    ensemble.samples$env <- NULL
+  }
+  #-- For making the ensembls this makes the new params - trait values    
+  params <- list()
+  for (i in seq_len(nens)) {
+    if (sample_parameters == TRUE) {
+      params[[i]] <- lapply(ensemble.samples, function(x, n) {
+        x[i, ]
+      }, n = i)
+    } else {
+      params[[i]] <- ensemble.samples
     }
-    #-- For making the ensembls this makes the new params - trait values    
-    params <- list()
-    for (i in seq_len(nens)) {
-      if (sample_parameters == TRUE) {
-        params[[i]] <- lapply(ensemble.samples, function(x, n) {
-          x[i, ]
-        }, n = i)
-      } else {
-        params[[i]] <- ensemble.samples
-      }
-    } 
-
+  } 
+  
   cat('Here4 \n')
-#------------------------------------------------------------------------------------------------  
-#-- Writting the configs and for all ensumbles and run - Loop---------------------
-#-----------------------------------------------------------------------------------------------  
+  #------------------------------------------------------------------------------------------------  
+  #-- Writting the configs and for all ensumbles and run - Loop---------------------
+  #-----------------------------------------------------------------------------------------------  
   run.id <- list()
   for (i in seq_len(nens)) {
     ## set RUN.ID
@@ -142,27 +142,27 @@ ensemble.gen<-function(settings,nens=10,metF=F,paramsF=T,IC=NULL){
     } else {
       run.id[[i]] <- paste("EnKF", i, sep = ".")
     }
-   suppressWarnings({
-    dir.create(file.path(settings$rundir, run.id[[i]]), recursive = TRUE)
-    dir.create(file.path(settings$modeloutdir, run.id[[i]]), recursive = TRUE)
-   })
-   cat('Here4.1 \n')
-   # See if there is coming as the IC------------------
+    suppressWarnings({
+      dir.create(file.path(settings$rundir, run.id[[i]]), recursive = TRUE)
+      dir.create(file.path(settings$modeloutdir, run.id[[i]]), recursive = TRUE)
+    })
+    cat('Here4.1 \n')
+    # See if there is coming as the IC------------------
     if(is.null(IC)) {
-       ic.arg<-NULL
+      ic.arg<-NULL
     }else{
       ic.arg<-IC[i,]
     }
-
-      do.call(what = my.write.config, args = list(defaults = NULL, 
-                                                  trait.values = params[[i]], 
-                                                  settings = settings, 
-                                                  run.id = run.id[[i]], 
-                                                  inputs = inputs[[i]], 
-                                                  IC = ic.arg
-                                                  )
-              )
-
+    
+    do.call(what = my.write.config, args = list(defaults = NULL, 
+                                                trait.values = params[[i]], 
+                                                settings = settings, 
+                                                run.id = run.id[[i]], 
+                                                inputs = inputs[[i]], 
+                                                IC = ic.arg
+    )
+    )
+    
     cat('Here5 \n')
     ## write a README for the run
     cat("runtype     : sda.enkf\n",
@@ -192,39 +192,43 @@ ensemble.gen<-function(settings,nens=10,metF=F,paramsF=T,IC=NULL){
       append = FALSE)
   
   ## start model runs-----------------------------------------------------------------------------
-    PEcAn.remote::start.model.runs(settings, write)
+  PEcAn.remote::start.model.runs(settings, write)
   cat('Here6 \n')
-#-Now reading the results---------------------------------------------------------------------------------------
+  #-Now reading the results---------------------------------------------------------------------------------------
   new.params <- params
   # foreach ensumble
   seq_len(nens)%>%
     purrr::map(function(i){
       year(settings$run$start.date):year(settings$run$end.date)->years
-          #for each year in simulation
+      #for each year in simulation
       years%>%
-            purrr::map(function(year.out){
-               X_tmp <- vector("list", 2) 
-               X_tmp <- do.call(my.read_restart, args = list(outdir = outdir, 
-                                                       runid = run.id[[i]], 
-                                                       stop.time = paste0(year.out,"/12/31"), 
-                                                       settings = settings, 
-                                                       var.names = var.names, 
-                                                       params = params[[i]]))
-               # this checks to see the read restart function sent out the params or not 
-               if (!is.null(X_tmp[[2]])){new.params[[i]] <<- (X_tmp[[2]]) }else{new.params[[i]] <<- NULL }
-               #collecting the params used for this ensemble
-           
-               return(X_tmp[[1]])
-            })%>%setNames(years)->sims
+        purrr::map(function(year.out){
+          X_tmp <- vector("list", 2) 
+          X_tmp <- do.call(my.read_restart, args = list(outdir = outdir, 
+                                                        runid = run.id[[i]], 
+                                                        stop.time = paste0(year.out,"/12/31"), 
+                                                        settings = settings, 
+                                                        var.names = var.names, 
+                                                        params = params[[i]],
+                                                        When=When,
+                                                        timez=timez
+          )
+          )
+          # this checks to see the read restart function sent out the params or not 
+          if (!is.null(X_tmp[[2]])){new.params[[i]] <<- (X_tmp[[2]]) }else{new.params[[i]] <<- NULL }
+          #collecting the params used for this ensemble
+          
+          return(X_tmp[[1]])
+        })%>%setNames(years)->sims
       return(sims)
     })%>%setNames(unlist(run.id[seq_len(nens)]))->model.output
   
-    cat(i,' - Here7 \n')
-   if (length(new.params)>0) setNames(new.params,unlist(run.id[seq_len(nens)]))->new.params
+  cat(i,' - Here7 \n')
+  if (length(new.params)>0) setNames(new.params,unlist(run.id[seq_len(nens)]))->new.params
   
-    # states will be in X, but we also want to carry some deterministic relationships to write_restart
-    # these will be stored in params
-
+  # states will be in X, but we also want to carry some deterministic relationships to write_restart
+  # these will be stored in params
+  
   return(list(ensembles=model.output,params=new.params))
   
 }#end of function

@@ -1,23 +1,3 @@
-##' @title sda.enkf
-##' @name  sda.enkf
-##' @author Michael Dietze and Ann Raiho \email{dietze@@bu.edu}
-##' 
-##' @param settings    PEcAn settings object
-##' @param obs.mean    list of observations of the means of state variable (time X nstate)
-##' @param obs.cov     list of observations of covariance matrices of state variables (time X nstate X nstate)
-##' @param IC          initial conditions
-##' @param Q           process covariance matrix given if there is no data to estimate it
-##' @param adjustment  flag for using ensemble adjustment filter or not
-##' @param restart      Used for iterative updating previous forecasts. This is a list that includes ens.inputs, the list of inputs by ensemble member, params, the parameters, and old_outdir, the output directory from the previous workflow. These three things are needed to ensure that if a new workflow is started that ensemble members keep there run-specific met and params. See Details
-##'
-##’ @details
-##’ Restart mode:  Basic idea is that during a restart (primary case envisioned as an iterative forecast), a new workflow folder is created and the previous forecast for the start_time is copied over. During restart the initial run before the loop is skipped, with the info being populated from the previous run. The function then dives right into the first Analysis, then continues on like normal.
-##' 
-##' @description State Variable Data Assimilation: Ensemble Kalman Filter
-##' 
-##' @return NONE
-##' @export
-##' 
 sda.enkf.refactored <- function(settings, obs.mean, obs.cov, IC = NULL, Q = NULL, adjustment = TRUE, restart=NULL) {
   #My personal notes -----------------------
   # Three analysis function was initially developed into this:
@@ -57,249 +37,7 @@ sda.enkf.refactored <- function(settings, obs.mean, obs.cov, IC = NULL, Q = NULL
                              USE.NAMES = FALSE), 
                       use.names = FALSE)
   names(var.names) <- NULL
-  dir.create(rundir,recursive=TRUE) # remote will give warning
-  
-  ###-------------------------------------------------------------------###
-  ### get model specific functions                                      ###
-  ###-------------------------------------------------------------------### 
-  do.call("require", list(paste0("PEcAn.", model)))
-  my.write.config  <- paste0("write.config.", model)
-  my.read_restart  <- paste0("read_restart.", model)
-  my.write_restart <- paste0("write_restart.", model)
-  my.split_inputs  <- paste0("split_inputs.", model)
-  
-  # models that don't need split_inputs, check register file for that
-  register.xml <- system.file(paste0("register.", model, ".xml"), package = paste0("PEcAn.", model))
-  register <- XML::xmlToList(XML::xmlParse(register.xml))
-  no_split <- !as.logical(register$exact.dates)
-  
-  if (!exists(my.write.config)) {
-    PEcAn.logger::logger.warn(my.write.config, "does not exist")
-    PEcAn.logger::logger.severe("please make sure that the PEcAn interface is loaded for", model)
-  }
-  
-  if (!exists(my.split_inputs)  &  !no_split) {
-    PEcAn.logger::logger.warn(my.split_inputs, "does not exist")
-    PEcAn.logger::logger.severe("please make sure that the PEcAn interface is loaded for", model)
-  }
-  
-  ###-------------------------------------------------------------------###
-  ### load model specific input ensembles for initial runs              ###
-  ###-------------------------------------------------------------------### 
-  n.inputs <- max(table(names(settings$run$inputs)))
-  if(n.inputs > nens){
-    sampleIDs <- 1:nens
-  }else{
-    sampleIDs <- c(1:n.inputs,sample.int(n.inputs, (nens - n.inputs), replace = TRUE))
-  }
-  
 
-  if(is.null(restart) & is.null(restart$ens.inputs)){
-    ens.inputs <- sample_met(settings,nens)
-  }else {
-    ens.inputs <- restart$ens.inputs
-  }
-
-  inputs <- list()
-  for(i in seq_len(nens)){
-    
-    if(no_split){
-      inputs[[i]] <- ens.inputs[[i]] # passing settings$run$inputs$met$path is the same thing, just following the logic despite the hack above
-    }else{
-      ### get only necessary ensemble inputs. Do not change in analysis
-      #ens.inputs[[i]] <- get.ensemble.inputs(settings = settings, ens = sampleIDs[i])
-      ### model specific split inputs
-      inputs[[i]] <- do.call(my.split_inputs, 
-                             args = list(settings = settings, 
-                                         start.time = settings$run$start.date, 
-                                         stop.time = as.Date(names(obs.mean)[1]),#settings$run$end.date,
-                                         inputs = ens.inputs[[i]]))#,
-      #                                       outpath = file.path(rundir,paste0("met",i))))
-    }
-
-
-  }
-  
-  ###-------------------------------------------------------------------###
-  ### open database connection                                          ###
-  ###-------------------------------------------------------------------### 
-  if (write) {
-    con <- try(db.open(settings$database$bety), silent = TRUE)
-    if (is(con, "try-error")) {
-      con <- NULL
-    } else {
-      on.exit(db.close(con))
-    }
-  } else {
-    con <- NULL
-  }
-  
-  ###-------------------------------------------------------------------###
-  ### get new workflow ids                                              ###
-  ###-------------------------------------------------------------------### 
-  if ("workflow" %in% names(settings)) {
-    workflow.id <- settings$workflow$id
-  } else {
-#    workflow.id <- -1
-    settings <- check.workflow.settings(settings,con)
-    workflow.id <- settings$workflow$id
-    PEcAn.logger::logger.info("new workflow ID - ",workflow.id)
-  }
-  
-  ###-------------------------------------------------------------------###
-  ### create ensemble ids                                               ###
-  ###-------------------------------------------------------------------### 
-  if (!is.null(con)) {
-    # write ensemble first
-    now <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
-    db.query(paste("INSERT INTO ensembles (created_at, runtype, workflow_id) values ('", now, 
-                   "', 'EnKF', ", workflow.id, ")", sep = ""), con)
-    ensemble.id <- db.query(paste("SELECT id FROM ensembles WHERE created_at='", now, "'", sep = ""), 
-                            con)[["id"]]
-  } else {
-    ensemble.id <- -1
-  }
-  
-  ###-------------------------------------------------------------------###
-  ### perform initial set of runs                                       ###
-  ###-------------------------------------------------------------------###  
-  run.id <- list()
-  X <- IC
-  
-  ## Load Parameters
-  if(is.null(restart) & is.null(restart$params)){
-    if (sample_parameters == TRUE) {
-      settings$ensemble$size <- settings$state.data.assimilation$n.ensemble
-    } else {
-      settings$ensemble$size <- 1
-    }
-    
-    ######################################################################################################################
-    #                                                                                                                    #     
-    #   NOTE: It's easiest to try to define priors such that sum of SIPNET allocation params "root_allocation_fraction", #
-    #   "wood_allocation_fraction" and "leaf_allocation_fraction" doesnt' exceed 1,                                      #
-    #   if it exceeds runs will finish but you'll get 0 for AbvGrndWood which would affect your forecast ensemble        #
-    #   write.configs.SIPNET also gives a warning, if you want stricter control you can change it to error               #
-    #   the commented out code below was to force their sum to be <1 leaving as a reminder until refactoring             #
-    #                                                                                                                    #
-    ######################################################################################################################
-    
-    
-    
-    # cumulative_ensemble_samples <- numeric(0)
-    # 
-    # repeat{ # temporary SIPNET hack, I want to make sure sum <1 for SIPNET
-      get.parameter.samples(settings, ens.sample.method = settings$ensemble$method)  ## Aside: if method were set to unscented, would take minimal changes to do UnKF
-      load(file.path(settings$outdir, "samples.Rdata"))  ## loads ensemble.samples
-    #   cumulative_ensemble_samples <- rbind(cumulative_ensemble_samples,ensemble.samples$temperate.deciduous_SDA)
-    #   tot_check <- apply(ensemble.samples$temperate.deciduous_SDA[,c(20, 25,27)],1,sum) < 1
-    #   cumulative_ensemble_samples <- cumulative_ensemble_samples[tot_check,]
-    #   if(nrow(cumulative_ensemble_samples)>=nens){
-    #     ensemble.samples$temperate.deciduous_SDA <- cumulative_ensemble_samples[seq_len(nens),]
-    #     break
-    #   } 
-    # }
-    
-    
-    if ("env" %in% names(ensemble.samples)) {
-      ensemble.samples$env <- NULL
-    }
-    
-    params <- list()
-    for (i in seq_len(nens)) {
-      if (sample_parameters == TRUE) {
-        params[[i]] <- lapply(ensemble.samples, function(x, n) {
-          x[i, ]
-        }, n = i)
-      } else {
-        params[[i]] <- ensemble.samples
-      }
-    } 
-  } else {
-    ## params exist from restart
-    params <- restart$params
-  }
-  
-  ## if a restart, get the old run folders
-  if(!is.null(restart)){
-    if(is.null(restart$old_outdir)){
-      old_outdir = settings$outdir ## if old_outdir not specified, restart in place
-    } else {
-      old_outdir = restart$old_outdir
-    }
-    old_runs <- list.dirs(file.path(old_outdir,"out"),recursive=FALSE)
-    ## select the _last_ nens
-    old_runs <- tail(old_runs,nens)
-  }
-  
-  
-  for (i in seq_len(nens)) {
-    
-    ## set RUN.ID
-    if (!is.null(con)) {
-      now <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
-      paramlist <- paste("EnKF:", i)
-      run.id[[i]] <- db.query(paste0("INSERT INTO runs (model_id, site_id, start_time, finish_time, outdir, created_at, ensemble_id,", 
-                                     " parameter_list) values ('", settings$model$id, "', '", settings$run$site$id, "', '", 
-                                     settings$run$start.date, "', '", settings$run$end.date, "', '", settings$outdir, "', '", 
-                                     now, "', ", ensemble.id, ", '", paramlist, "') RETURNING id"), con)
-    } else {
-      run.id[[i]] <- paste("EnKF", i, sep = ".")
-    }
-    dir.create(file.path(settings$rundir, run.id[[i]]), recursive = TRUE)
-    dir.create(file.path(settings$modeloutdir, run.id[[i]]), recursive = TRUE)
-    
-    ## Write Configs
-    if(is.null(restart)){
-      do.call(what = my.write.config, args = list(defaults = NULL, 
-                                         trait.values = params[[i]], 
-                                         settings = settings, 
-                                         run.id = run.id[[i]], 
-                                         inputs = inputs[[i]], 
-                                         IC = IC[i, ]))
-    } else {
-      ## copy over old run's forecast
-      old_file <- file.path(old_runs[i],paste0(year(settings$run$start.date),".nc"))
-      file.copy(old_file,file.path(settings$modeloutdir, run.id[[i]]))
-        ## should swap this out for a symbolic link -- no need for duplication
-    }
-    
-    ## write a README for the run
-    cat("runtype     : sda.enkf\n",
-        "workflow id : ", as.character(workflow.id), "\n",
-        "ensemble id : ", as.character(ensemble.id), "\n",
-        "ensemble    : ", i, "\n",
-        "run id      : ", as.character(run.id[[i]]), "\n",
-        "pft names   : ", as.character(lapply(settings$pfts, function(x) x[["name"]])), "\n",
-        "model       : ", model, "\n",
-        "model id    : ", settings$model$id, "\n",
-        "site        : ", settings$run$site$name, "\n",
-        "site  id    : ", settings$run$site$id, "\n",
-        "met data    : ", inputs$met$path, "\n",
-        "start date  : ", settings$run$start.date, "\n",
-        "end date    : ", settings$run$end.date, "\n",
-        "hostname    : ", settings$host$name, "\n",
-        "rundir      : ", file.path(settings$host$rundir, run.id[[i]]), "\n",
-        "outdir      : ", file.path(settings$host$outdir, run.id[[i]]), "\n",
-        file = file.path(settings$rundir, run.id[[i]], "README.txt"), 
-        sep='')
-  }
-  
-  ## add the jobs to the list of runs
-  cat(as.character(unlist(run.id)), 
-      file = file.path(settings$rundir, "runs.txt"),
-      sep = "\n", 
-      append = FALSE)
-  
-  ## start model runs
-  if(is.null(restart)){
-    PEcAn.remote::start.model.runs(settings, settings$database$bety$write)
-  }
-  save(list = ls(envir = environment(), all.names = TRUE), 
-       file = file.path(outdir, "sda.initial.runs.Rdata"), envir = environment())
-  
-  
-  
   ###-------------------------------------------------------------------###
   ### tests before data assimilation                                    ###
   ###-------------------------------------------------------------------###  
@@ -381,26 +119,8 @@ sda.enkf.refactored <- function(settings, obs.mean, obs.cov, IC = NULL, Q = NULL
   ###-------------------------------------------------------------------### 
   
   for(t in seq_len(nt)) {
-    ###-------------------------------------------------------------------###
-    ### read restart                                                      ### ----
-    ###-------------------------------------------------------------------###  
-    X_tmp <- vector("list", 2) 
-    X <- list()
-    new.params <- params
+    PEcAn.assim.sequential:::ensemble.gen(settings,settings$state.data.assimilation$n.ensemble)->ens.outputs
     
-    # var.names <- c("AbvGrndWood", "GWBI", "TotLivBiom", "leaf_carbon_content") 
-    for (i in seq_len(nens)) {
-      X_tmp[[i]] <- do.call(my.read_restart, args = list(outdir = outdir, 
-                                                     runid = run.id[[i]], 
-                                                     stop.time = obs.times[t], 
-                                                     settings = settings, 
-                                                     var.names = var.names, 
-                                                     params = params[[i]]))
-      # states will be in X, but we also want to carry some deterministic relationships to write_restart
-      # these will be stored in params
-      X[[i]]      <- X_tmp[[i]]$X
-      new.params[[i]] <- X_tmp[[i]]$params
-    }
     
     X <- do.call(rbind, X)
 
@@ -616,47 +336,11 @@ sda.enkf.refactored <- function(settings, obs.mean, obs.cov, IC = NULL, Q = NULL
     ### forecast step                                                     ###----
     ###-------------------------------------------------------------------### 
     if (t < nt) {
-      
-      
-      ###-------------------------------------------------------------------###
-      ### split model specific inputs for current runs                      ###
-      ###-------------------------------------------------------------------### 
-      
-      if(!no_split){
-        
-        inputs <- list()
-        for(i in seq_len(nens)){
-          inputs[[i]] <- do.call(my.split_inputs, 
-                                 args = list(settings = settings, 
-                                             start.time = (ymd_hms(obs.times[t],truncated = 3) + second(hms("00:00:01"))), 
-                                             stop.time = obs.times[t + 1],
-                                             inputs = ens.inputs[[i]])) 
-          
-        }
-      }
-      
-      
-      ###-------------------------------------------------------------------###
-      ### write restart by ensemble                                         ###
-      ###-------------------------------------------------------------------### 
-      
-      for (i in seq_len(nens)) {
-        do.call(my.write_restart, 
-                args = list(outdir = outdir, 
-                            runid = run.id[[i]], 
-                            start.time = strptime(obs.times[t],format="%Y-%m-%d %H:%M:%S"),
-                            stop.time = strptime(obs.times[t + 1],format="%Y-%m-%d %H:%M:%S"), 
-                            settings = settings,
-                            new.state = new.state[i, ], 
-                            new.params = new.params[[i]], 
-                            inputs = inputs[[i]], 
-                            RENAME = TRUE))
-      }
+
       ###-------------------------------------------------------------------###
       ### Run model                                                         ###
       ###-------------------------------------------------------------------### 
-      print(paste("Running Model for Year", as.Date(obs.times[t]) + 1))
-      PEcAn.remote::start.model.runs(settings, settings$database$bety$write)
+    
     }
     
     ###-------------------------------------------------------------------###
@@ -671,7 +355,7 @@ sda.enkf.refactored <- function(settings, obs.mean, obs.cov, IC = NULL, Q = NULL
   ### create diagnostics                                                ###-----
   ###-------------------------------------------------------------------### 
   
-  ### LOAD CLIMATE ### HACK ### LINKAGES SPECIFIC
+  ### LOAD CLIMATE ### HACK ### LINKAGES SPECIFIC----
   if (model == "LINKAGES") {
     climate_file <- settings$run$inputs$met$path
     load(climate_file)
