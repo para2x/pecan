@@ -1,8 +1,10 @@
 Analysis.sda<-function(settings,
                        method="EnKF",
                        Forcast=list(Pf=NULL,mu.f=NULL,Q=NULL,X=NULL),
-                       Observed=list(R=NULL,Y=NULL)
+                       Observed=list(R=NULL,Y=NULL),
+                       choose
                        ){
+
 #-----------------------------------Settup------------------------------------------------
 source('/fs/data3/hamzed/pecan/modules/assim.sequential/R/Nimble_codes.R') # bringing in the library and the functions.
 #General
@@ -12,14 +14,16 @@ var.names <- unlist(sapply(settings$state.data.assimilation$state.variable,
                              }, 
                              USE.NAMES = FALSE), 
                       use.names = FALSE)
+
 #Forcast inputs 
 Q<-Forcast$Q # process error
 Pf<-Forcast$Pf # forcast precision
 mu.f<-Forcast$mu.f #mean forcast
 X<-Forcast$X # states 
 #Observed inputs
-Y<-Observed$Y
 R<-Observed$R
+Y<-Observed$Y
+
 #----------------------------------- EnKF--------------------------------------------------    
   if (method=="EnKF"){
     ## design matrix

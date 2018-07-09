@@ -36,13 +36,16 @@ write_restart.SIPNET <- function(outdir, runid, start.time, stop.time, settings,
   IC_extra <- data.frame(t(new.params$restart))
   
   if (RENAME) {
+    #cat("HERE 10 \n")
+    unlink(list.files(file.path(outdir, runid),pattern = "*.nc"))# deleting the nc files
     file.rename(file.path(outdir, runid, "sipnet.out"),
-                file.path(outdir, runid, paste0("sipnet.", as.Date(start.time), ".out")))
+                file.path(outdir, runid, paste0("sipnet.", year(start.time), ".out")))
+  
     system(paste("rm", file.path(rundir, runid, "sipnet.clim")))
   } else {
     print(paste("Files not renamed -- Need to rerun year", start.time, "before next time step"))
   }
-
+  #cat("HERE 11 \n")
   settings$run$start.date <- start.time
   settings$run$end.date <- stop.time
 
@@ -51,7 +54,7 @@ write_restart.SIPNET <- function(outdir, runid, start.time, stop.time, settings,
   unit.conv <- 2 * (10000 / 1) * (1 / 1000) * (3.154 * 10^7)  # kgC/m2/s -> Mg/ha/yr
 
   analysis.save <- list()
-
+  #cat("HERE 12 \n")
   if ("NPP" %in% variables) {
     analysis.save[[length(analysis.save) + 1]] <- udunits2::ud.convert(new.state$NPP, "kg/m^2/s", "Mg/ha/yr")  #*unit.conv -> Mg/ha/yr
     names(analysis.save[[length(analysis.save)]]) <- c("NPP")
@@ -105,9 +108,13 @@ write_restart.SIPNET <- function(outdir, runid, start.time, stop.time, settings,
     if (new.state$SWE < 0) analysis.save[[length(analysis.save)]] <- 0
     names(analysis.save[[length(analysis.save)]]) <- c("snow")
   }
-
+  #cat("HERE 13 \n")
   analysis.save.mat <- data.frame(matrix(unlist(analysis.save, use.names = TRUE), nrow = 1))
   colnames(analysis.save.mat) <- names(unlist(analysis.save))
+  #cat("HERE 14 \n")
+  #print(new.params)
+  #print(inputs)
+  #print((settings))
 
   do.call(write.config.SIPNET, args = list(defaults = NULL,
                                            trait.values = new.params,
@@ -115,5 +122,6 @@ write_restart.SIPNET <- function(outdir, runid, start.time, stop.time, settings,
                                            run.id = runid,
                                            inputs = inputs,
                                            IC = analysis.save.mat))
-  print(runid)
+  #cat("End -----------write restart \n")
+
 } # write_restart.SIPNET

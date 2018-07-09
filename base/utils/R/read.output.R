@@ -30,7 +30,7 @@
 ##' @return If \code{dataframe=FALSE}, a vector of output variables. If \code{dataframe=TRUE}, a data.frame of output variables with POSIXct timestamps added.
 ##' @export
 ##' @author Michael Dietze, David LeBauer
-read.output <- function(runid, outdir, start.year = NA, end.year = NA, variables = "GPP", dataframe= FALSE, pft.name = NULL) {
+read.output <- function(runid, outdir, start.year = NA, end.year = NA, variables = "GPP", dataframe= FALSE, pft.name = NULL,control=list(trace=T)) {
   
   ## vars in units s-1 to be converted to y-1 cflux = c('GPP', 'NPP', 'NEE',
   ## 'TotalResp', 'AutoResp', 'HeteroResp', 'DOC_flux', 'Fire_flux') # kgC m-2 s-1
@@ -47,14 +47,14 @@ read.output <- function(runid, outdir, start.year = NA, end.year = NA, variables
     } else if (is.character(start.year)) {
       start.year = as.numeric(start.year)
     } else {
-      PEcAn.logger::logger.error("start.year must be of type numeric, character, Date, or POSIXt")
+     if (control$trace) PEcAn.logger::logger.error("start.year must be of type numeric, character, Date, or POSIXt")
     }
     if (lubridate::is.instant(end.year)) {
       end.year = lubridate::year(end.year)
     } else if (is.character(end.year)) {
       end.year = as.numeric(end.year)
     } else {
-      PEcAn.logger::logger.error("end.year must be of type numeric, character, Date, or POSIXt")
+      if (control$trace) PEcAn.logger::logger.error("end.year must be of type numeric, character, Date, or POSIXt")
     }
 
     # select only those *.nc years requested by user
@@ -79,6 +79,7 @@ read.output <- function(runid, outdir, start.year = NA, end.year = NA, variables
     }
     nofiles <- TRUE
   } else {
+    if (control$trace) 
     PEcAn.logger::logger.info("Reading output for Years: ", start.year, " - ", end.year, 
                 "in directory:", outdir,
                 "including files", basename(ncfiles))
@@ -138,7 +139,7 @@ read.output <- function(runid, outdir, start.year = NA, end.year = NA, variables
   } else if (nofiles) {
     result <- lapply(variables, function(x) NA)
   }
-  
+  if (control$trace) 
   PEcAn.logger::logger.info(
     variables,
     "Mean:", lapply(result, function(x) signif(mean(x, na.rm = TRUE), 3)),
