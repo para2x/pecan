@@ -186,9 +186,10 @@ get.ensemble.samples <- function(ensemble.size, pft.samples, env.samples,
 ##' @export
 ##' @author David LeBauer, Carl Davidson
 write.ensemble.configs <- function(defaults, ensemble.samples, settings, model, 
-                                   clean = FALSE, write.to.db = TRUE) {
+                                   clean = FALSE, write.to.db = TRUE,restart=NULL) {
   
   my.write.config <- paste("write.config.", model, sep = "")
+  my.write_restart <- paste0("write_restart.", model)
   
   if (is.null(ensemble.samples)) {
     return(list(runs = NULL, ensemble.id = NULL))
@@ -212,96 +213,121 @@ write.ensemble.configs <- function(defaults, ensemble.samples, settings, model,
   } else {
     workflow.id <- -1
   }
-  
-  # create an ensemble id
-  if (!is.null(con)) {
-    # write ensemble first
-    ensemble.id <- PEcAn.DB::db.query(paste0(
-      "INSERT INTO ensembles (runtype, workflow_id) ",
-      "VALUES ('ensemble', ", format(workflow.id, scientific = FALSE), ")",
-      "RETURNING id"), con = con)[['id']]
-
-    for (pft in defaults) {
-      PEcAn.DB::db.query(paste0(
-        "INSERT INTO posteriors_ensembles (posterior_id, ensemble_id) ",
-        "values (", pft$posteriorid, ", ", ensemble.id, ")"), con = con)
-    }
-  } else {
-    ensemble.id <- NA
-  }
-  
-  # find all inputs that have an id
-  inputs <- names(settings$run$inputs)
-  inputs <- inputs[grepl(".id$", inputs)]
-  
-  # write configuration for each run of the ensemble
-  runs <- data.frame()
-  for (counter in seq_len(settings$ensemble$size)) {
-    if (!is.null(con)) {
-      paramlist <- paste("ensemble=", counter, sep = "")
-      run.id <- PEcAn.DB::db.query(paste0(
-        "INSERT INTO runs (model_id, site_id, start_time, finish_time, outdir, ensemble_id, parameter_list) ",
-        "values ('", 
-          settings$model$id, "', '", 
-          settings$run$site$id, "', '", 
-          settings$run$start.date, "', '", 
-          settings$run$end.date, "', '", 
-          settings$run$outdir, "', ", 
-          ensemble.id, ", '", 
-          paramlist, "') ",
-        "RETURNING id"), con = con)[['id']]
-      
-      # associate inputs with runs
-      if (!is.null(inputs)) {
-        for (x in inputs) {
-          PEcAn.DB::db.query(paste0("INSERT INTO inputs_runs (input_id, run_id) ",
-                          "values (", settings$run$inputs[[x]], ", ", run.id, ")"), 
-                   con = con)
+#------------------------------------------------- if restart is NULL ------------------  
+  if (is.null(restart)){
+          # create an ensemble id
+      if (!is.null(con)) {
+        # write ensemble first
+        ensemble.id <- PEcAn.DB::db.query(paste0(
+          "INSERT INTO ensembles (runtype, workflow_id) ",
+          "VALUES ('ensemble', ", format(workflow.id, scientific = FALSE), ")",
+          "RETURNING id"), con = con)[['id']]
+    
+        for (pft in defaults) {
+          PEcAn.DB::db.query(paste0(
+            "INSERT INTO posteriors_ensembles (posterior_id, ensemble_id) ",
+            "values (", pft$posteriorid, ", ", ensemble.id, ")"), con = con)
         }
+      } else {
+        ensemble.id <- NA
       }
       
-    } else {
-      run.id <- get.run.id("ENS", left.pad.zeros(counter, 5))
+      # find all inputs that have an id
+      inputs <- names(settings$run$inputs)
+      inputs <- inputs[grepl(".id$", inputs)]
+      
+      # write configuration for each run of the ensemble
+      runs <- data.frame()
+      for (counter in seq_len(settings$ensemble$size)) {
+        if (!is.null(con)) {
+          paramlist <- paste("ensemble=", counter, sep = "")
+          run.id <- PEcAn.DB::db.query(paste0(
+            "INSERT INTO runs (model_id, site_id, start_time, finish_time, outdir, ensemble_id, parameter_list) ",
+            "values ('", 
+              settings$model$id, "', '", 
+              settings$run$site$id, "', '", 
+              settings$run$start.date, "', '", 
+              settings$run$end.date, "', '", 
+              settings$run$outdir, "', ", 
+              ensemble.id, ", '", 
+              paramlist, "') ",
+            "RETURNING id"), con = con)[['id']]
+          
+          # associate inputs with runs
+          if (!is.null(inputs)) {
+            for (x in inputs) {
+              PEcAn.DB::db.query(paste0("INSERT INTO inputs_runs (input_id, run_id) ",
+                              "values (", settings$run$inputs[[x]], ", ", run.id, ")"), 
+                       con = con)
+            }
+          }
+          
+        } else {
+          run.id <- get.run.id("ENS", left.pad.zeros(counter, 5))
+        }
+        runs[counter, "id"] <- run.id
+        
+        # create folders (cleaning up old ones if needed)
+        if (clean) {
+          unlink(file.path(settings$rundir, run.id))
+          unlink(file.path(settings$modeloutdir, run.id))
+        }
+        dir.create(file.path(settings$rundir, run.id), recursive = TRUE)
+        dir.create(file.path(settings$modeloutdir, run.id), recursive = TRUE)
+        
+        # write run information to disk
+        cat("runtype     : ensemble\n",
+            "workflow id : ", workflow.id, "\n",
+            "ensemble id : ", ensemble.id, "\n",
+            "run         : ", counter, "/", settings$ensemble$size, "\n",
+            "run id      : ", run.id, "\n",
+            "pft names   : ", as.character(lapply(settings$pfts, function(x) x[['name']])), "\n",
+            "model       : ", model, "\n",
+            "model id    : ", settings$model$id, "\n",
+            "site        : ", settings$run$site$name, "\n",
+            "site  id    : ", settings$run$site$id, "\n",
+            "met data    : ", settings$run$site$met, "\n",
+            "start date  : ", settings$run$start.date, "\n",
+            "end date    : ", settings$run$end.date, "\n",
+            "hostname    : ", settings$host$name, "\n",
+            "rundir      : ", file.path(settings$host$rundir, run.id), "\n",
+            "outdir      : ", file.path(settings$host$outdir, run.id), "\n",
+            file = file.path(settings$rundir, run.id, "README.txt"))
+        
+        do.call(my.write.config, args = list( defaults = defaults, 
+                                              trait.values = lapply(ensemble.samples, function(x, n) { x[n, , drop=FALSE] }, n=counter), # this is the params
+                                              settings = settings, 
+                                              run.id = run.id)
+        )
+        cat(run.id, file = file.path(settings$rundir, "runs.txt"), sep = "\n", append = TRUE)
+      }
+      return(invisible(list(runs = runs, ensemble.id = ensemble.id)))
+#------------------------------------------------- if restart is NULL ------------------        
+  }else{
+    #reading retsrat inputs
+    inputs<-restart$inputs
+    run.id<-restart$runid
+    new.params<-restart$new.params
+    new.state<-restart$new.state
+    ensemble.id<-restart$ensemble.id
+    
+    for (i in seq_len(settings$ensemble$size)) {
+      do.call(my.write_restart, 
+              args =  list(outdir = settings$host$outdir, 
+                           runid = run.id[[i]], 
+                           start.time = restart$start.time,
+                           stop.time =restart$stop.time, 
+                           settings = settings,
+                           new.state = new.state[i, ], 
+                           new.params = new.params[[i]], 
+                           inputs =NULL, 
+                           RENAME = TRUE)
+      )
     }
-    runs[counter, "id"] <- run.id
-    
-    # create folders (cleaning up old ones if needed)
-    if (clean) {
-      unlink(file.path(settings$rundir, run.id))
-      unlink(file.path(settings$modeloutdir, run.id))
-    }
-    dir.create(file.path(settings$rundir, run.id), recursive = TRUE)
-    dir.create(file.path(settings$modeloutdir, run.id), recursive = TRUE)
-    
-    # write run information to disk
-    cat("runtype     : ensemble\n",
-        "workflow id : ", workflow.id, "\n",
-        "ensemble id : ", ensemble.id, "\n",
-        "run         : ", counter, "/", settings$ensemble$size, "\n",
-        "run id      : ", run.id, "\n",
-        "pft names   : ", as.character(lapply(settings$pfts, function(x) x[['name']])), "\n",
-        "model       : ", model, "\n",
-        "model id    : ", settings$model$id, "\n",
-        "site        : ", settings$run$site$name, "\n",
-        "site  id    : ", settings$run$site$id, "\n",
-        "met data    : ", settings$run$site$met, "\n",
-        "start date  : ", settings$run$start.date, "\n",
-        "end date    : ", settings$run$end.date, "\n",
-        "hostname    : ", settings$host$name, "\n",
-        "rundir      : ", file.path(settings$host$rundir, run.id), "\n",
-        "outdir      : ", file.path(settings$host$outdir, run.id), "\n",
-        file = file.path(settings$rundir, run.id, "README.txt"))
-    
-    do.call(my.write.config, args = list(
-      defaults = defaults, 
-      trait.values = lapply(
-        ensemble.samples, function(x, n) { x[n, , drop=FALSE] }, n=counter
-      ), 
-      settings = settings, 
-      run.id = run.id)
-    )
-    cat(run.id, file = file.path(settings$rundir, "runs.txt"), sep = "\n", append = TRUE)
+    params<-new.params
+    return(invisible(list(runs = data.frame(id=run.id), ensemble.id = ensemble.id)))
   }
 
-  return(invisible(list(runs = runs, ensemble.id = ensemble.id)))
+
+
 } # write.ensemble.configs

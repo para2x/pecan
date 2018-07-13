@@ -26,8 +26,11 @@ read_restart.SIPNET <- function(outdir, runid, stop.time, settings, var.names, p
                                              ), 
                                 timez="UTC",
                                 When=NULL,
-                                control=list(trace=F)
+                                control=list(trace=F),...
                                 ) {
+#see if there is something else coming
+  dots<-list(...)
+  if (length(dots)>0) lapply(names(dots),function(name){assign(name,dots[[name]], pos=1 )})
   
   prior.sla <- params[[which(!names(params) %in% c("soil", "soil_SDA", "restart"))[1]]]$SLA
   forecast <- list()
@@ -42,6 +45,7 @@ read_restart.SIPNET <- function(outdir, runid, stop.time, settings, var.names, p
                      end.year = lubridate::year(stop.time),
                      variables = var.names,
                      control=list(trace=control$trace))
+  
 
   forecast <- list()
   ##I'm kaing the timefrmae for the simulations given the year and the length of the output. leap years needs to be check for 30 or 31 in date

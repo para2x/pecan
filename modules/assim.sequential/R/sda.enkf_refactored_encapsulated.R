@@ -9,7 +9,7 @@ sda.enkf.refactored <- function(settings,
                                              interactivePlot=T,
                                              TimeseriesPlot=T,
                                              BiasPlot=F
-                                             ),...) {
+                                             )) {
   #My personal notes -----------------------
   # Two analysis function was initially developed into this:
   # 1-EnKF
@@ -24,7 +24,6 @@ sda.enkf.refactored <- function(settings,
   # have analytical solution - needs MCMC
   # X stores IC of state variables and then collects state variables in each loop
   # Y stores the observed mean
-  # Assimilation is done for start:end setting assimilation section
   #------------------------  
   ymd_hms <- lubridate::ymd_hms
   hms     <- lubridate::hms
@@ -55,10 +54,6 @@ sda.enkf.refactored <- function(settings,
   obs.cov<-obs.cov[sapply(year(names(obs.cov)),function(obs.year) obs.year%in%(assimyears))]
   # dir address based on the end date
   if(!dir.exists("SDA")) dir.create("SDA",showWarnings = F)
-  #--get model specific functions
-  do.call("require", list(paste0("PEcAn.", model)))
-  my.write_restart <- paste0("write_restart.", model)
-  my.read_restart <- paste0("read_restart.", model)
   ###-------------------------------------------------------------------###
   ### tests before data assimilation                                    ###
   ###-------------------------------------------------------------------###  
@@ -108,14 +103,11 @@ sda.enkf.refactored <- function(settings,
 
   # weight matrix
   wt.mat <- matrix(NA, nrow = nens, ncol = nt)
-  #Generate parameter needs to be run before this to generate the samples. This is hopefully done in the main workflow.
-  load(file.path(settings$outdir, "samples.Rdata"))  ## loads ensemble.samples
   ###-------------------------------------------------------------------###
   ### If this is restart - Picking up were we left last time            ###----
   ###-------------------------------------------------------------------### 
   if (restart){
     load(file.path(settings$outdir,"SDA", "sda.output.Rdata"))
-    #--- Updating the nt and etc
     if(!dir.exists(file.path(settings$outdir,"SDA",assimyears[t]))) dir.create(file.path(settings$outdir,"SDA",assimyears[t]))
     # finding/moving files to it's end year dir
     files.last.sda<-list.files.nodir(file.path(settings$outdir,"SDA"))
@@ -125,78 +117,46 @@ sda.enkf.refactored <- function(settings,
                  )
   }else{
     t<-0
-    params <- list()
-    for (i in seq_len(nens)) {
-      if (sample_parameters == TRUE) {
-        params[[i]] <- lapply(ensemble.samples, function(x, n) {
-          x[i, ]
-        }, n = i)
-      } else {
-        params[[i]] <- ensemble.samples
-      }
-    } 
   }
   ###-------------------------------------------------------------------###
   ### loop over time                                                    ###----
   ###-------------------------------------------------------------------### 
   while(t<nt){
-    #browser()
     t<-t+1
     # do we have obs for this time - what year is it ?
     obs <- which(!is.na(obs.mean[[t]]))
     obs.year<-year(names(obs.mean)[t])
-
-    #- Check ti see if this is the first run or not and what inputs needs to be sent to write.ensemble configs
+    #- genereating the ensumbles
     if (t>1){
+      #print(run.id)
       restart.arg<-list(runid = run.id, 
                                 start.time = strptime(obs.times[t-1],format="%Y-%m-%d %H:%M:%S"),
                                 stop.time = strptime(obs.times[t],format="%Y-%m-%d %H:%M:%S"), 
                                 settings = settings,
                                 new.state = new.state, 
                                 new.params = new.params, 
-                                inputs = NULL, 
-                                RENAME = TRUE,
-                                ensemble.id=ensemble.id)
+                                inputs = inputs, 
+                                RENAME = TRUE)
     }else{
       restart.arg<-NULL
     }
-#-------------------------- Writting the config/ Running the model and reading the outputs for each ensemble
-    write.ensemble.configs(defaults = settings$pfts, 
-                           ensemble.samples = ensemble.samples, 
-                           settings = settings,
-                           model = settings$model$type, 
-                           write.to.db = settings$database$bety$write,
-                           restart = restart.arg)->outconfig
-    
-
-    run.id<-outconfig$runs$id
-    ensemble.id<-outconfig$ensemble.id
-    #-- RUN
-    PEcAn.remote::start.model.runs(settings, settings$database$bety$write)
-    #-- Reading the output
-    X_tmp <- vector("list", 2) 
-    X <- list()
-    new.params <- params
-    for (i in seq_len(nens)) {
-
-      X_tmp[[i]] <- do.call(my.read_restart, args = list(outdir = outdir, 
-                                                         runid = run.id, 
-                                                         stop.time = obs.times[t], 
-                                                         settings = settings, 
-                                                         var.names = var.names, 
-                                                         params = params[[i]]))
-      # states will be in X, but we also want to carry some deterministic relationships to write_restart
-      # these will be stored in params
-      X[[i]]      <- X_tmp[[i]]$X
-      new.params[[i]] <- X_tmp[[i]]$params
-     
-    }
+    #-- main function for making ensembles
+    ensemble.gen(settings,
+                 settings$state.data.assimilation$n.ensemble,
+                 restart=restart.arg,
+                 )->ens.outs
+    #collectting the basics of how the simulations were run: runid/inputs and simulation outputs
+    ens.outputs<-ens.outs[[1]] # this is just the variables what would be left out is the params
+    params<-ens.outs[[2]]
+    run.id<-ens.outs[[3]]
+    inputs<-ens.outs[[4]]
     #--- this could be expanded to find the exact date in ens.outputs
-      X2<-lapply(X,function(lis){
-        #take out the year of observation
-        (lis)[[1]]%>%unlist()
+    X<-lapply(ens.outputs,function(lis){
+      #take out the year of observation
+      (lis[[obs.year%>%as.character()]])[[1]]%>%unlist()
       })
-    X <- do.call(rbind, X2)
+
+    X <- do.call(rbind, X)
 
   
     FORECAST[[t]] <- X
@@ -306,7 +266,7 @@ sda.enkf.refactored <- function(settings,
     ###-------------------------------------------------------------------###
     ### save outputs                                                      ###----
     ###-------------------------------------------------------------------### 
-    save(t, FORECAST, ANALYSIS, enkf.params,new.state,new.params,run.id,ensemble.id,ensemble.samples, file = file.path(settings$outdir,"SDA", "sda.output.Rdata"))
+    save(t, FORECAST, ANALYSIS, enkf.params,new.state,new.params,inputs,run.id, file = file.path(settings$outdir,"SDA", "sda.output.Rdata"))
 
   } ### end loop over time
   ### LOAD CLIMATE ### HACK ### LINKAGES SPECIFIC----

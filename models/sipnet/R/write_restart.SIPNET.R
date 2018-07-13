@@ -27,16 +27,17 @@
 ##' @return NONE
 ##' @export
 write_restart.SIPNET <- function(outdir, runid, start.time, stop.time, settings, new.state,
-                                 RENAME = TRUE, new.params = FALSE, inputs) {
+                                 RENAME = TRUE, new.params = FALSE, inputs=NULL) {
 
-  rundir <- settings$host$rundir
+  
+ rundir <- settings$host$rundir
   variables <- colnames(new.state)
 
   # values that will be used for updating other states deterministically depending on the SDA states
-  IC_extra <- data.frame(t(new.params$restart))
+  if (is.null(new.params$restart)) {IC_extra<-NULL}else{IC_extra <- data.frame(t(new.params$restart))}
+    
   
   if (RENAME) {
-    #cat("HERE 10 \n")
     unlink(list.files(file.path(outdir, runid),pattern = "*.nc"))# deleting the nc files
     file.rename(file.path(outdir, runid, "sipnet.out"),
                 file.path(outdir, runid, paste0("sipnet.", year(start.time), ".out")))
@@ -45,7 +46,7 @@ write_restart.SIPNET <- function(outdir, runid, start.time, stop.time, settings,
   } else {
     print(paste("Files not renamed -- Need to rerun year", start.time, "before next time step"))
   }
-  #cat("HERE 11 \n")
+
   settings$run$start.date <- start.time
   settings$run$end.date <- stop.time
 
@@ -64,15 +65,18 @@ write_restart.SIPNET <- function(outdir, runid, start.time, stop.time, settings,
     AbvGrndWood <- udunits2::ud.convert(new.state$AbvGrndWood,  "Mg/ha", "g/m^2")
     analysis.save[[length(analysis.save) + 1]] <- AbvGrndWood 
     names(analysis.save[[length(analysis.save)]]) <- c("AbvGrndWood")
-    
+    if(!is.null(IC_extra)){
     analysis.save[[length(analysis.save) + 1]] <- IC_extra$abvGrndWoodFrac
     names(analysis.save[[length(analysis.save)]]) <- c("abvGrndWoodFrac")
-    
+    }
+    if(!is.null(IC_extra)){
     analysis.save[[length(analysis.save) + 1]] <- IC_extra$coarseRootFrac 
     names(analysis.save[[length(analysis.save)]]) <- c("coarseRootFrac")
-    
+    }
+    if(!is.null(IC_extra)){
     analysis.save[[length(analysis.save) + 1]] <- IC_extra$fineRootFrac 
     names(analysis.save[[length(analysis.save)]]) <- c("fineRootFrac")
+    }
   }
 
   if ("LeafC" %in% variables) {
@@ -108,20 +112,14 @@ write_restart.SIPNET <- function(outdir, runid, start.time, stop.time, settings,
     if (new.state$SWE < 0) analysis.save[[length(analysis.save)]] <- 0
     names(analysis.save[[length(analysis.save)]]) <- c("snow")
   }
-  #cat("HERE 13 \n")
+
   analysis.save.mat <- data.frame(matrix(unlist(analysis.save, use.names = TRUE), nrow = 1))
   colnames(analysis.save.mat) <- names(unlist(analysis.save))
-  #cat("HERE 14 \n")
-  #print(new.params)
-  #print(inputs)
-  #print((settings))
-
   do.call(write.config.SIPNET, args = list(defaults = NULL,
                                            trait.values = new.params,
                                            settings = settings,
                                            run.id = runid,
                                            inputs = inputs,
                                            IC = analysis.save.mat))
-  #cat("End -----------write restart \n")
 
 } # write_restart.SIPNET

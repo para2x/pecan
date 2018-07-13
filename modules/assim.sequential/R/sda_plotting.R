@@ -13,6 +13,12 @@ interactive.plotting.sda<-function(settings,t,obs.times,obs.mean,obs.cov,obs,X,F
   alphapurple <- rgb(purple[1], purple[2], purple[3], 75, max = 255)
   brown       <- col2rgb("brown")
   alphabrown <- rgb(brown[1], brown[2], brown[3], 75, max = 255)
+  var.names <- unlist(sapply(settings$state.data.assimilation$state.variable, 
+                             function(x) {
+                               x$variable.name
+                             }, 
+                             USE.NAMES = FALSE), 
+                      use.names = FALSE)
   #----
   t1 <- 1
   names.y <- unique(unlist(lapply(obs.mean[t1:t], function(x) { names(x) })))
@@ -57,6 +63,7 @@ interactive.plotting.sda<-function(settings,t,obs.times,obs.mean,obs.cov,obs,X,F
     
     # observation / data
     if (i <= ncol(Ybar) & any(obs)) {
+      browser()
       plot(as.Date(obs.times[t1:t]), 
            Xbar, 
            ylim = range(c(XaCI, Xci, Ybar[,i]), na.rm = TRUE), 
@@ -96,6 +103,7 @@ interactive.plotting.sda<-function(settings,t,obs.times,obs.mean,obs.cov,obs,X,F
 
 
 postana.timeser.plotting.sda<-function(settings,t,obs.times,obs.mean,obs.cov,obs,X,FORECAST,ANALYSIS){
+  cat("In time series plot -------\n")
   #Defining some colors
   t1         <- 1
   pink       <- col2rgb("deeppink")
@@ -110,6 +118,12 @@ postana.timeser.plotting.sda<-function(settings,t,obs.times,obs.mean,obs.cov,obs
   alphabrown <- rgb(brown[1], brown[2], brown[3], 75, max = 255)
   ylab.names <- unlist(sapply(settings$state.data.assimilation$state.variable, 
                               function(x) { x })[2, ], use.names = FALSE)
+  var.names <- unlist(sapply(settings$state.data.assimilation$state.variable, 
+                             function(x) {
+                               x$variable.name
+                             }, 
+                             USE.NAMES = FALSE), 
+                      use.names = FALSE)
   #----
   
   pdf(file.path(settings$outdir,"SDA", "sda.enkf.time-series.pdf"))

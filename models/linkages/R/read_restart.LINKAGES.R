@@ -30,7 +30,9 @@ read_restart.LINKAGES <- function(outdir, runid, stop.time, settings, var.names 
                                                c('','') #preprocess function. Sending the function explicitly                                
                                   ),
                                   timez="UTC",
-                                  When=NULL) {
+                                  When=NULL,...) {
+  dots<-list(...)
+  if (length(dots)>0) lapply(names(dots),function(name){assign(name,dots[[name]], pos=1 )})
   
   # Read ensemble output
   ens <- read.output(runid = runid, 
@@ -78,5 +80,5 @@ read_restart.LINKAGES <- function(outdir, runid, stop.time, settings, var.names 
  
   # Put forecast into vector
   print(runid)
-  return(list(unlist(forecast),NULL))
+  return(list(X = list(Variables=forecast)))
 }
