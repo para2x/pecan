@@ -18,11 +18,11 @@
 ##' @return X.vec      vector of forecasts
 ##' @export
 read_restart.SIPNET <- function(outdir, runid, stop.time, settings, var.names, params,
-                                var.map=list(c("leaf_carbon_content","litter_carbon_content","TotSoilCarb","SoilMoistFrac","SWE","GWBI","AbvGrndWood","AGB"),
-                                             c("LeafC","Litter","TotSoilCarb","SoilMoistFrac","SWE","GWBI","AbvGrndWood",'AGB'), # what we want
-                                             c('','','','','',"kg/m^2/s","kg/m^2",""), # unit in
-                                             c('','','','','',"Mg/ha/yr","Mg/ha",""), #unit out
-                                             c('','','','','',mean,"","") #preprocess function. Sending the function explicitly                                
+                                var.map=list(c("leaf_carbon_content","litter_carbon_content","TotSoilCarb","SoilMoistFrac","SWE","GWBI",   "AbvGrndWood","AGB"),
+                                             c("LeafC",              "Litter",               "TotSoilCarb","SoilMoistFrac","SWE","GWBI",   "AbvGrndWood",'AGB'), # what we want
+                                             c('','','','','',                                                                   "kg/m^2/s","kg/m^2",  ""), # unit in
+                                             c('','','','','',                                                                   "Mg/ha/yr","Mg/ha",   ""), #unit out
+                                             c('','','','','',                                                                    mean,     "",        "") #preprocess function. Sending the function explicitly                                
                                              ), 
                                 timez="UTC",
                                 When=NULL,
@@ -45,8 +45,8 @@ read_restart.SIPNET <- function(outdir, runid, stop.time, settings, var.names, p
                      end.year = lubridate::year(stop.time),
                      variables = var.names,
                      control=list(trace=control$trace))
-  
 
+  if(all(is.na(unlist(ens)))) PEcAn.logger::logger.error("No output has been generated. Either asking for the wrong year or error in simulation run.")
   forecast <- list()
   ##I'm kaing the timefrmae for the simulations given the year and the length of the output. leap years needs to be check for 30 or 31 in date
   where.index<-c()
@@ -67,6 +67,7 @@ read_restart.SIPNET <- function(outdir, runid, stop.time, settings, var.names, p
   # removing the first and the last - when you ask for a different year that's not in time frime it would send out either the first or the last one
   where.index<-where.index[where.index!=1 & where.index!=length(Timeframe)]
   if(is.null(When) | length(where.index)==0)    where.index <- length(ens[[1]])
+
   #The first vector in the arg is the model's title names for outputs and second is what we wanted it to be
   # the third and fourth are the units in and out
   purrr::pwalk(var.map,
@@ -82,7 +83,8 @@ read_restart.SIPNET <- function(outdir, runid, stop.time, settings, var.names, p
       }          
       
   })
-
+  
+  
   # Finding some params-------------
   if ("AbvGrndWood" %in% var.names) {
     # calculate fractions, store in params, will use in write_restart
@@ -93,6 +95,8 @@ read_restart.SIPNET <- function(outdir, runid, stop.time, settings, var.names, p
     params$restart <- c(abvGrndWoodFrac, coarseRootFrac, fineRootFrac)
     #names(params$restart) <- c("abvGrndWoodFrac", "coarseRootFrac", "fineRootFrac")
   }
+  
+
   #print(runid)
   X_tmp <- list(X = list(Variables=forecast,When=Timeframe[where.index]), params = params)
                 

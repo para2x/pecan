@@ -18,7 +18,7 @@ load_data_paleon_sda <- function(settings){
   ## Tree Rings from tree ring module
   ## PLS and FIA Biomass Snapshot
   ## Wish list: eddy covariance
-  
+  #browser()
   if(file.exists(file.path(settings$outdir,'sda.obs.Rdata'))){
     load(file.path(settings$outdir,'sda.obs.Rdata'))
     return(obs.list)

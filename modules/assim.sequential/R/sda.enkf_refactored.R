@@ -19,12 +19,13 @@ sda.enkf.refactored <- function(settings,
   # Y/R    - Observed data and covariance
   # mu.a/Pa  - afetr analysis - new mean and covariance
   # nt is the length of observed  
-  # When processvar == FALSE it means we are doin EnKF and it's TRUE Generlized Ensumble Filter
+  # When processvar == FALSE it means we are doin EnKF and when it's TRUE Generlized Ensumble Filter
   # Generlized Ensumble Filter NEEDS process variance to avoid filter divergence and it does not
   # have analytical solution - needs MCMC
   # X stores IC of state variables and then collects state variables in each loop
   # Y stores the observed mean
   # Assimilation is done for start:end setting assimilation section
+  # Models that they wanna be added for SDA their read_restart needs to be in a certain format. look into read_restart_SIPNET
   #------------------------  
   ymd_hms <- lubridate::ymd_hms
   hms     <- lubridate::hms
@@ -39,9 +40,8 @@ sda.enkf.refactored <- function(settings,
   rundir     <- settings$host$rundir
   host       <- settings$host
   forecast.time.step <- settings$state.data.assimilation$forecast.time.step  #idea for later generalizing
-  nens       <- as.numeric(settings$state.data.assimilation$n.ensemble)
+  nens       <- as.numeric(settings$ensemble$size)
   processvar <- settings$state.data.assimilation$process.variance
-  sample_parameters <- settings$state.data.assimilation$sample.parameters
   var.names <- unlist(sapply(settings$state.data.assimilation$state.variable, 
                              function(x) {
                                x$variable.name
@@ -101,15 +101,12 @@ sda.enkf.refactored <- function(settings,
   wish.df <- function(Om, X, i, j, col) {
     (Om[i, j]^2 + Om[i, i] * Om[j, j]) / var(X[, col])
   }
-  
-  if(var.names=="Fcomp"){
-    y_star_create<-y_star_create_Fcomp
-  }
 
   # weight matrix
   wt.mat <- matrix(NA, nrow = nens, ncol = nt)
   #Generate parameter needs to be run before this to generate the samples. This is hopefully done in the main workflow.
   load(file.path(settings$outdir, "samples.Rdata"))  ## loads ensemble.samples
+
   ###-------------------------------------------------------------------###
   ### If this is restart - Picking up were we left last time            ###----
   ###-------------------------------------------------------------------### 
@@ -123,18 +120,9 @@ sda.enkf.refactored <- function(settings,
        file.copy(file.path(file.path(settings$outdir,"SDA"),files.last.sda),
                  file.path(file.path(settings$outdir,"SDA"),paste0(assimyears[t],"/",files.last.sda))
                  )
+       params<-new.params
   }else{
     t<-0
-    params <- list()
-    for (i in seq_len(nens)) {
-      if (sample_parameters == TRUE) {
-        params[[i]] <- lapply(ensemble.samples, function(x, n) {
-          x[i, ]
-        }, n = i)
-      } else {
-        params[[i]] <- ensemble.samples
-      }
-    } 
   }
   ###-------------------------------------------------------------------###
   ### loop over time                                                    ###----
@@ -154,13 +142,14 @@ sda.enkf.refactored <- function(settings,
                                 settings = settings,
                                 new.state = new.state, 
                                 new.params = new.params, 
-                                inputs = NULL, 
+                                inputs = inputs, 
                                 RENAME = TRUE,
                                 ensemble.id=ensemble.id)
     }else{
       restart.arg<-NULL
     }
 #-------------------------- Writting the config/ Running the model and reading the outputs for each ensemble
+    #
     write.ensemble.configs(defaults = settings$pfts, 
                            ensemble.samples = ensemble.samples, 
                            settings = settings,
@@ -168,29 +157,40 @@ sda.enkf.refactored <- function(settings,
                            write.to.db = settings$database$bety$write,
                            restart = restart.arg)->outconfig
     
-
+    #browser()
     run.id<-outconfig$runs$id
     ensemble.id<-outconfig$ensemble.id
+    inputs<-outconfig$samples$met
+    #reformatting params
+    params <- list()
+    for (i in seq_len(nens)) {
+      params[[i]] <- lapply(outconfig$samples$parameters$samples, function(x, n) {
+          x[i, ] }, n = i)
+    } 
+   #s browser()
     #-- RUN
     PEcAn.remote::start.model.runs(settings, settings$database$bety$write)
-    #-- Reading the output
+    #------------------- Reading the output
     X_tmp <- vector("list", 2) 
     X <- list()
     new.params <- params
     for (i in seq_len(nens)) {
 
       X_tmp[[i]] <- do.call(my.read_restart, args = list(outdir = outdir, 
-                                                         runid = run.id, 
+                                                         runid = run.id[i], 
                                                          stop.time = obs.times[t], 
                                                          settings = settings, 
                                                          var.names = var.names, 
-                                                         params = params[[i]]))
+                                                         params = params[[i]]
+                                                         )
+                            )
       # states will be in X, but we also want to carry some deterministic relationships to write_restart
       # these will be stored in params
       X[[i]]      <- X_tmp[[i]]$X
       new.params[[i]] <- X_tmp[[i]]$params
      
     }
+ 
     #--- this could be expanded to find the exact date in ens.outputs
       X2<-lapply(X,function(lis){
         #take out the year of observation
@@ -198,18 +198,20 @@ sda.enkf.refactored <- function(settings,
       })
     X <- do.call(rbind, X2)
 
-  
+
     FORECAST[[t]] <- X
     mu.f <- as.numeric(apply(X, 2, mean, na.rm = TRUE))
     Pf <- cov(X)
-    pmiss <- which(diag(Pf) == 0)
-    diag(Pf)[pmiss] <- 0.1 ## hack for zero variance
+    diag(Pf)[which(diag(Pf) == 0)] <- 0.1 ## hack for zero variance
+
     ###-------------------------------------------------------------------###
-    ###  preparing OBS                                                   ###----
+    ###  preparing OBS                                                    ###
     ###-------------------------------------------------------------------###  
     if (any(obs)) {
-
-      choose <- na.omit(charmatch(colnames(X),names(obs.mean[[t]])))
+      #Hamze used agrep instead of charmatch to take advantage of fuzzy matching
+      #there might be little problem in names, now this would not be a problem
+      #choose <- na.omit(charmatch(colnames(X),names(obs.mean[[t]])))
+      choose <-sapply(colnames(X),agrep,x=names(obs.mean[[t]]),max=2,USE.NAMES = F)%>%unlist
       
       Y <- unlist(obs.mean[[t]][choose])
       Y[is.na(Y)] <- 0 
@@ -221,13 +223,12 @@ sda.enkf.refactored <- function(settings,
         diag(R)[which(diag(R)==0)] <- min(diag(R)[which(diag(R) != 0)])/2
         diag(Pf)[which(diag(Pf)==0)] <- min(diag(Pf)[which(diag(Pf) != 0)])/5
       }
-      
-      ### TO DO: plotting not going to work because of observation operator i.e. y and x are on different scales
-      ###-------------------------------------------------------------------###
-      ### Analysis                                                          ###----
-      ###-------------------------------------------------------------------###
+ ###-------------------------------------------------------------------###
+ ### Analysis                                                          ###
+ ###-------------------------------------------------------------------###
       if(processvar == FALSE){an.method<-EnKF  }else{    an.method<-GEF   }  
       #-analysis function
+      #browser()
         enkf.params[[t]] <-Analysis.sda(settings,
                                         FUN=an.method,
                                         Forcast=list(Pf=Pf,mu.f=mu.f,Q=Q,X=X),
@@ -247,13 +248,20 @@ sda.enkf.refactored <- function(settings,
       }
       #-- writing Trace--------------------
       if(control$trace) {
-        cat ("\n Start ",obs.year," ********************************************** \n")
-        cat ("\n Obs data in this iteration \n")
+        cat ("\n --------------------------- ",obs.year," ---------------------------\n")
+        cat ("\n --------------Obs mean----------- \n")
         print(Y)
+        cat ("\n --------------Obs Cov ----------- \n")
         print(R)
-        cat ("\n Forcast and analysis output \n")
-        print(enkf.params[[t]])
-        cat ("\n ********************************************** \n")
+        cat ("\n --------------Forcast mean ----------- \n")
+        print(enkf.params[[t]]$mu.f)
+        cat ("\n --------------Forcast Cov ----------- \n")
+        print(enkf.params[[t]]$Pf)
+        cat ("\n --------------Analysis mean ----------- \n")
+        print(t(enkf.params[[t]]$mu.a))
+        cat ("\n --------------Analysis Cov ----------- \n")
+        print(enkf.params[[t]]$Pa)
+        cat ("\n ------------------------------------------------------\n")
       }
       
       } else {
@@ -306,19 +314,9 @@ sda.enkf.refactored <- function(settings,
     ###-------------------------------------------------------------------###
     ### save outputs                                                      ###----
     ###-------------------------------------------------------------------### 
-    save(t, FORECAST, ANALYSIS, enkf.params,new.state,new.params,run.id,ensemble.id,ensemble.samples, file = file.path(settings$outdir,"SDA", "sda.output.Rdata"))
+    save(t, FORECAST, ANALYSIS, enkf.params,new.state,new.params,run.id,ensemble.id,ensemble.samples,inputs, file = file.path(settings$outdir,"SDA", "sda.output.Rdata"))
 
   } ### end loop over time
-  ### LOAD CLIMATE ### HACK ### LINKAGES SPECIFIC----
-  if (model == "LINKAGES") {
-    climate_file <- settings$run$inputs$met$path
-    load(climate_file)
-    temp.mat     <- temp.mat[year(obs.times) - 853, ]
-    precip.mat   <- precip.mat[year(obs.times) - 853, ]
-  } else {
-    print("climate diagnostics under development")
-  }
-  
   ###-------------------------------------------------------------------###
   ### time series plots                                                 ###-----
   ###-------------------------------------------------------------------### 

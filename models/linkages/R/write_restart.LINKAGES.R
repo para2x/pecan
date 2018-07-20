@@ -45,8 +45,8 @@ write_restart.LINKAGES <- function(outdir, runid, start.time, stop.time,
   names(new.state) <- names.keep
   
   new.state.save <- new.state
-  
-  if(grep('Fcomp',names.keep)){
+  new.state.other<-NULL
+  if(any(grepl('Fcomp',names.keep))){
     new.state <- new.state.save[grep("Fcomp", names(new.state.save))]
     new.state.other <- new.state.save[grep("Fcomp", names(new.state.save), invert = TRUE)]
   }
@@ -324,8 +324,8 @@ write_restart.LINKAGES <- function(outdir, runid, start.time, stop.time,
   # dbh[sum(ntrees[1:n])-1] for(j in 1:ntrees.temp){ b_obs <-
   # biomass_function(dbh[j],slta=slta,sltb=sltb,fwt=fwt,frt=frt)*bcorr[n] dbh.temp[j] <-
   # optimize(merit, c(0,200),b_obs=b_obs)$minimum } } nu <- nl + ntrees[n] - 1 nl <- nu + 1 }
-  
   ##### SOIL
+  if (!is.null(new.state.other))
   if ("TotSoilCarb" %in% names(new.state.other)) {
     leaf.sum <- sum(tyl[1:12]) * 0.48
     if(new.state.other["TotSoilCarb"] > 1000) new.state.other["TotSoilCarb"] = rnorm(1,1000,10)

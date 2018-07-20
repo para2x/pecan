@@ -242,25 +242,21 @@ write.ensemble.configs <- function(defaults, ensemble.samples, settings, model,
     #performing the sampling
     samples<-list()
     for(i in seq_along(samp.ordered)){
-      
       myparent<-samp.ordered[[i]]$parent # do I have a parent ?
       #call the function responsible for generating the ensemble
       do.call(paste0(names(samp.ordered[i]),".ens.gen"),
               args = list(settings=settings,
                           method=samp.ordered[[i]]$method,
                           parenids=if(!is.null(myparent)) samples[[myparent]], # if I have parent then give me their ids - this is where the ordering matters making sure the parent is done before it's asked
-                          ensemble.samples)
+                          ensemble.samples=ensemble.samples
+                          )
       )->samples[[names(samp.ordered[i])]]
       
     }
     
-    
-    
     # if no ensemble piece was in the xml I replicare n times the first element in met and params
     if (is.null(samples$met)) samples$met$samples<-rep(settings$run$inputs$met$path[1],settings$ensemble$size)
     if (is.null(samples$parameters)) samples$parameters$samples<-ensemble.samples%>%purrr::map(~.x[rep(1,settings$ensemble$size),])
-    
-    
     #------------------------End of generating ensembles-----------------------------------
     # find all inputs that have an id
     inputs <- names(settings$run$inputs)
@@ -331,10 +327,12 @@ write.ensemble.configs <- function(defaults, ensemble.samples, settings, model,
       )
       )
       cat(run.id, file = file.path(settings$rundir, "runs.txt"), sep = "\n", append = TRUE)
+     
     }
     return(invisible(list(runs = runs, ensemble.id = ensemble.id, samples=samples)))
     #------------------------------------------------- if we already have everything ------------------        
   }else{
+    #browser()
     #reading retsrat inputs
     inputs<-restart$inputs
     run.id<-restart$runid
@@ -356,7 +354,9 @@ write.ensemble.configs <- function(defaults, ensemble.samples, settings, model,
       )
     }
     params<-new.params
-    return(invisible(list(runs = data.frame(id=run.id), ensemble.id = ensemble.id)))
+    return(invisible(list(runs = data.frame(id=run.id), ensemble.id = ensemble.id, samples=list(met=inputs)
+                          )
+                     ))
   }
   
   
@@ -408,12 +408,13 @@ met.ens.gen<-function(settings,method="sampling",parenids=NULL,...){
 #' @export
 #'
 #' @examples
+#' @author Hamze Dokoohaki
 parameters.ens.gen<-function(settings,method="sampling",parenids=NULL,...){
-  #-- reading the dots and exposing them to the inside of the function
+  #-- reading the dots and exposing them to the inside of the function . In this case it exsposes ensemble.samples
   samples<-list()
   dots<-list(...)
   if (length(dots)>0) lapply(names(dots),function(name){assign(name,dots[[name]], pos=1 )})
-  
+ 
   if(!is.null(parenids)) { # if you have a parent - ids are sent by the parent
     #ids are sent based on the total sample size of the parent we need to make sure that the child also has as many samples
     samples$ids<-parenids$ids
@@ -442,6 +443,7 @@ parameters.ens.gen<-function(settings,method="sampling",parenids=NULL,...){
 #' @export
 #'
 #' @examples
+#' @author Hamze Dokoohaki
 vegetation.ens.gen<-function(settings,method="sampling",parenids=NULL,...){
   #-- reading the dots and exposing them to the inside of the function
   dots<-list(...)
@@ -461,6 +463,7 @@ vegetation.ens.gen<-function(settings,method="sampling",parenids=NULL,...){
 #' @export
 #'
 #' @examples
+#' @author Hamze Dokoohaki
 soil.ens.gen<-function(settings,method="",parenids=NULL,...){
   #-- reading the dots and exposing them to the inside of the function
   dots<-list(...)

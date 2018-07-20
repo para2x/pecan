@@ -63,7 +63,7 @@ interactive.plotting.sda<-function(settings,t,obs.times,obs.mean,obs.cov,obs,X,F
     
     # observation / data
     if (i <= ncol(Ybar) & any(obs)) {
-      browser()
+      #browser()
       plot(as.Date(obs.times[t1:t]), 
            Xbar, 
            ylim = range(c(XaCI, Xci, Ybar[,i]), na.rm = TRUE), 
@@ -103,7 +103,6 @@ interactive.plotting.sda<-function(settings,t,obs.times,obs.mean,obs.cov,obs,X,F
 
 
 postana.timeser.plotting.sda<-function(settings,t,obs.times,obs.mean,obs.cov,obs,X,FORECAST,ANALYSIS){
-  cat("In time series plot -------\n")
   #Defining some colors
   t1         <- 1
   pink       <- col2rgb("deeppink")
@@ -125,7 +124,6 @@ postana.timeser.plotting.sda<-function(settings,t,obs.times,obs.mean,obs.cov,obs
                              USE.NAMES = FALSE), 
                       use.names = FALSE)
   #----
-  
   pdf(file.path(settings$outdir,"SDA", "sda.enkf.time-series.pdf"))
   
   names.y <- unique(unlist(lapply(obs.mean[t1:t], function(x) { names(x) })))
@@ -136,7 +134,8 @@ postana.timeser.plotting.sda<-function(settings,t,obs.times,obs.mean,obs.cov,obs
     tmp[mch] <- x[mch]
     tmp
   }))
-  Y.order <- na.omit(pmatch(colnames(FORECAST[[t]]), colnames(Ybar)))
+  #Y.order <- na.omit(pmatch(colnames(FORECAST[[t]]), colnames(Ybar)))
+  Y.order <- sapply(colnames(FORECAST[[t]]),agrep,x=colnames(Ybar),max=2,USE.NAMES = F)%>%unlist
   Ybar <- Ybar[,Y.order]
   YCI <- t(as.matrix(sapply(obs.cov[t1:t], function(x) {
     if (is.null(x)) {
