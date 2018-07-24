@@ -377,6 +377,7 @@ write.config.SIPNET <- function(defaults, trait.values, settings, run.id, inputs
   ####### end parameter update
 
   #### write INITIAL CONDITIONS here ####
+  browser()
   if (!is.null(IC)) {
     ic.names <- names(IC)
     ## plantWoodInit gC/m2

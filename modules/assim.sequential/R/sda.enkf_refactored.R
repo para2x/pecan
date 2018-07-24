@@ -1,9 +1,7 @@
 sda.enkf.refactored <- function(settings,
                                 obs.mean,
                                 obs.cov,
-                                IC = NULL,
                                 Q = NULL,
-                                adjustment = TRUE,
                                 restart=F,
                                 control=list(trace=T,
                                              interactivePlot=T,
@@ -24,7 +22,8 @@ sda.enkf.refactored <- function(settings,
   # have analytical solution - needs MCMC
   # X stores IC of state variables and then collects state variables in each loop
   # Y stores the observed mean
-  # Assimilation is done for start:end setting assimilation section
+  # Assimilation is done for start:end setting assimilation section - if it's a continuation of another sda (restart)
+  # then start date in the second xml should be the same as the first pecan xml
   # Models that they wanna be added for SDA their read_restart needs to be in a certain format. look into read_restart_SIPNET
   #------------------------  
   ymd_hms <- lubridate::ymd_hms
@@ -32,7 +31,8 @@ sda.enkf.refactored <- function(settings,
   second  <- lubridate::second
   ###-------------------------------------------------------------------###
   ### read settings                                                     ###
-  ###-------------------------------------------------------------------### 
+  ###-------------------------------------------------------------------###
+  adjustment = settings$state.data.assimilation$adjustment
   model      <- settings$model$type
   write      <- settings$database$bety$write
   defaults   <- settings$pfts
@@ -108,7 +108,7 @@ sda.enkf.refactored <- function(settings,
   load(file.path(settings$outdir, "samples.Rdata"))  ## loads ensemble.samples
 
   ###-------------------------------------------------------------------###
-  ### If this is restart - Picking up were we left last time            ###----
+  ### If this is a restart - Picking up were we left last time            ###----
   ###-------------------------------------------------------------------### 
   if (restart){
     load(file.path(settings$outdir,"SDA", "sda.output.Rdata"))
@@ -134,7 +134,7 @@ sda.enkf.refactored <- function(settings,
     obs <- which(!is.na(obs.mean[[t]]))
     obs.year<-year(names(obs.mean)[t])
 
-    #- Check ti see if this is the first run or not and what inputs needs to be sent to write.ensemble configs
+    #- Check to see if this is the first run or not and what inputs needs to be sent to write.ensemble configs
     if (t>1){
       restart.arg<-list(runid = run.id, 
                                 start.time = strptime(obs.times[t-1],format="%Y-%m-%d %H:%M:%S"),
@@ -167,10 +167,9 @@ sda.enkf.refactored <- function(settings,
       params[[i]] <- lapply(outconfig$samples$parameters$samples, function(x, n) {
           x[i, ] }, n = i)
     } 
-   #s browser()
-    #-- RUN
+    #-------------------------------------------- RUN-----------------------------------------------------
     PEcAn.remote::start.model.runs(settings, settings$database$bety$write)
-    #------------------- Reading the output
+    #------------------------------------------- Reading the output----------------------------------------
     X_tmp <- vector("list", 2) 
     X <- list()
     new.params <- params
@@ -208,8 +207,8 @@ sda.enkf.refactored <- function(settings,
     ###  preparing OBS                                                    ###
     ###-------------------------------------------------------------------###  
     if (any(obs)) {
-      #Hamze used agrep instead of charmatch to take advantage of fuzzy matching
-      #there might be little problem in names, now this would not be a problem
+      #Hamze: used agrep instead of charmatch to take advantage of fuzzy matching
+      #there might be little typo/mistake in names, now this would not be a problem
       #choose <- na.omit(charmatch(colnames(X),names(obs.mean[[t]])))
       choose <-sapply(colnames(X),agrep,x=names(obs.mean[[t]]),max=2,USE.NAMES = F)%>%unlist
       
@@ -266,8 +265,8 @@ sda.enkf.refactored <- function(settings,
       
       } else {
     ###-------------------------------------------------------------------###
-    ### No Observations -- Starts Here                                    ###----
-      ###-------------------------------------------------------------------### 
+    ### No Observations --                                                ###----
+      ###-----------------------------------------------------------------### 
       ### no process variance -- forecast is the same as the analysis ###
       if (processvar==FALSE) {
         mu.a <- mu.f
