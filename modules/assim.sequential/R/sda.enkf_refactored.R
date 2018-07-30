@@ -32,7 +32,7 @@ sda.enkf.refactored <- function(settings,
   ###-------------------------------------------------------------------###
   ### read settings                                                     ###
   ###-------------------------------------------------------------------###
-  adjustment = settings$state.data.assimilation$adjustment
+  adjustment <- settings$state.data.assimilation$adjustment
   model      <- settings$model$type
   write      <- settings$database$bety$write
   defaults   <- settings$pfts
@@ -59,6 +59,8 @@ sda.enkf.refactored <- function(settings,
   do.call("require", list(paste0("PEcAn.", model)))
   my.write_restart <- paste0("write_restart.", model)
   my.read_restart <- paste0("read_restart.", model)
+  #- Double checking some of the inputs
+  if (is.null(adjustment)) adjustment<-T
   ###-------------------------------------------------------------------###
   ### tests before data assimilation                                    ###
   ###-------------------------------------------------------------------###  
@@ -110,6 +112,14 @@ sda.enkf.refactored <- function(settings,
   ###-------------------------------------------------------------------###
   ### If this is a restart - Picking up were we left last time            ###----
   ###-------------------------------------------------------------------### 
+  #reformatting params
+  params <- list()
+  for (i in seq_len(nens)) {
+    params[[i]] <- lapply(ensemble.samples, function(x, n) {
+      x[i, ] }, n = i)
+  } 
+  new.params <- params
+  
   if (restart){
     load(file.path(settings$outdir,"SDA", "sda.output.Rdata"))
     #--- Updating the nt and etc
@@ -124,16 +134,17 @@ sda.enkf.refactored <- function(settings,
   }else{
     t<-0
   }
+
   ###-------------------------------------------------------------------###
   ### loop over time                                                    ###----
   ###-------------------------------------------------------------------### 
   while(t<nt){
-    #browser()
+
     t<-t+1
     # do we have obs for this time - what year is it ?
     obs <- which(!is.na(obs.mean[[t]]))
     obs.year<-year(names(obs.mean)[t])
-
+    #browser()
     #- Check to see if this is the first run or not and what inputs needs to be sent to write.ensemble configs
     if (t>1){
       restart.arg<-list(runid = run.id, 
@@ -149,24 +160,18 @@ sda.enkf.refactored <- function(settings,
       restart.arg<-NULL
     }
 #-------------------------- Writting the config/ Running the model and reading the outputs for each ensemble
-    #
+
     write.ensemble.configs(defaults = settings$pfts, 
                            ensemble.samples = ensemble.samples, 
                            settings = settings,
                            model = settings$model$type, 
                            write.to.db = settings$database$bety$write,
                            restart = restart.arg)->outconfig
-    
-    #browser()
+
+
     run.id<-outconfig$runs$id
     ensemble.id<-outconfig$ensemble.id
     inputs<-outconfig$samples$met
-    #reformatting params
-    params <- list()
-    for (i in seq_len(nens)) {
-      params[[i]] <- lapply(outconfig$samples$parameters$samples, function(x, n) {
-          x[i, ] }, n = i)
-    } 
     #-------------------------------------------- RUN-----------------------------------------------------
     PEcAn.remote::start.model.runs(settings, settings$database$bety$write)
     #------------------------------------------- Reading the output----------------------------------------
@@ -186,18 +191,19 @@ sda.enkf.refactored <- function(settings,
       # states will be in X, but we also want to carry some deterministic relationships to write_restart
       # these will be stored in params
       X[[i]]      <- X_tmp[[i]]$X
-      new.params[[i]] <- X_tmp[[i]]$params
-     
+      if (!is.null(X_tmp[[i]]$params)) new.params[[i]] <- X_tmp[[i]]$params
+        
     }
- 
+
     #--- this could be expanded to find the exact date in ens.outputs
-      X2<-lapply(X,function(lis){
+     X2<-lapply(X,function(lis){
         #take out the year of observation
         (lis)[[1]]%>%unlist()
       })
-    X <- do.call(rbind, X2)
 
+     X <- do.call(rbind, X2)
 
+  print(X)
     FORECAST[[t]] <- X
     mu.f <- as.numeric(apply(X, 2, mean, na.rm = TRUE))
     Pf <- cov(X)
@@ -210,7 +216,7 @@ sda.enkf.refactored <- function(settings,
       #Hamze: used agrep instead of charmatch to take advantage of fuzzy matching
       #there might be little typo/mistake in names, now this would not be a problem
       #choose <- na.omit(charmatch(colnames(X),names(obs.mean[[t]])))
-      choose <-sapply(colnames(X),agrep,x=names(obs.mean[[t]]),max=2,USE.NAMES = F)%>%unlist
+      choose <-sapply(colnames(X),agrep,x=names(obs.mean[[t]]),max=1,USE.NAMES = F)%>%unlist
       
       Y <- unlist(obs.mean[[t]][choose])
       Y[is.na(Y)] <- 0 
@@ -281,7 +287,7 @@ sda.enkf.refactored <- function(settings,
         Pa   <- Pf + solve(q.bar)
       }
       enkf.params[[t]] <- list(mu.f = mu.f, Pf = Pf, mu.a = mu.a, Pa = Pa)
-    }
+      }
     ###-------------------------------------------------------------------###
     ### adjustement/update state matrix                                   ###----
     ###-------------------------------------------------------------------### 
@@ -304,7 +310,6 @@ sda.enkf.refactored <- function(settings,
     
     ## in the future will have to be separated from analysis
     new.state  <- analysis
-    new.params <- params
     ANALYSIS[[t]] <- analysis
     ### Interactive plotting ------------------------------------------------------   
     if (t > 1 & control$interactivePlot) { #

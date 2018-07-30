@@ -33,7 +33,7 @@ load_data_paleon_sda <- function(settings){
   
   site <- PEcAn.DB::query.site(settings$run$site$id, bety$con)
   format_id <- settings$state.data.assimilation$data$format_id
-  
+
   input.list <- list()
   input.id <- list()
   obvs <- list()
@@ -85,12 +85,12 @@ load_data_paleon_sda <- function(settings){
       obvs[[i]] <- PEcAn.benchmark::load_data(data.path, format, start_year = lubridate::year(start_date), end_year = lubridate::year(end_date), site)
     
       variable <- intersect(var.names,colnames(obvs[[i]]))
-    
+    browser()
     ### Tree Ring Data Product
     if(format_id[[i]] == '1000000040'){
       obvs[[i]] <- obvs[[i]][obvs[[i]]$model_type=='Model RW + Census',]
-      obvs[[i]]$AbvGrndWood <- obvs[[i]]$AbvGrndWood * biomass2carbon #* kgm2Mgha 
-      obvs[[i]]$GWBI <- obvs[[i]]$GWBI * biomass2carbon  #* kgms2Mghayr 
+      if(!is.null(obvs[[i]]$AbvGrndWood))obvs[[i]]$AbvGrndWood <- obvs[[i]]$AbvGrndWood * biomass2carbon #* kgm2Mgha 
+      if(!is.null(obvs[[i]]$GWBI)) obvs[[i]]$GWBI <- obvs[[i]]$GWBI * biomass2carbon  #* kgms2Mghayr 
       arguments <- list(.(year, MCMC_iteration, site_id), .(variable))
       arguments2 <- list(.(year), .(variable))
       arguments3 <- list(.(MCMC_iteration), .(variable), .(year))

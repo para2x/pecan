@@ -125,7 +125,6 @@ postana.timeser.plotting.sda<-function(settings,t,obs.times,obs.mean,obs.cov,obs
                       use.names = FALSE)
   #----
   pdf(file.path(settings$outdir,"SDA", "sda.enkf.time-series.pdf"))
-  
   names.y <- unique(unlist(lapply(obs.mean[t1:t], function(x) { names(x) })))
   Ybar <- t(sapply(obs.mean[t1:t], function(x) {
     tmp <- rep(NA, length(names.y))
@@ -150,7 +149,7 @@ postana.timeser.plotting.sda<-function(settings,t,obs.times,obs.mean,obs.cov,obs
   YCI <- YCI[,Y.order]
   Xsum <- plyr::laply(FORECAST, function(x) { mean(rowSums(x[,1:length(names.y)], na.rm = TRUE)) })[t1:t]
   Xasum <- plyr::laply(ANALYSIS, function(x) { mean(rowSums(x[,1:length(names.y)], na.rm = TRUE)) })[t1:t]
-  
+  #------For each state variable 
   for (i in seq_len(ncol(X))) {
     Xbar <- plyr::laply(FORECAST[t1:t], function(x) {
       mean(x[, i], na.rm = TRUE) }) #/rowSums(x[,1:9],na.rm = T)
@@ -163,8 +162,8 @@ postana.timeser.plotting.sda<-function(settings,t,obs.times,obs.mean,obs.cov,obs
     Xci <- Xci
     
     Xa <- plyr::laply(ANALYSIS[t1:t], function(x) { 
-      
       mean(x[, i],na.rm = T) })
+    
     XaCI <- plyr::laply(ANALYSIS[t1:t], function(x) { 
       quantile(x[, i], c(0.025, 0.975),na.rm = T )})
     
@@ -173,14 +172,14 @@ postana.timeser.plotting.sda<-function(settings,t,obs.times,obs.mean,obs.cov,obs
     
     plot(as.Date(obs.times[t1:t]),
          Xbar, 
-         ylim = range(c(XaCI, Xci), na.rm = TRUE),
+         ylim = range(c(XaCI, Xci,Ybar[, i]), na.rm = TRUE),
          type = "n", 
          xlab = "Year", 
          ylab = ylab.names[grep(colnames(X)[i], var.names)],
          main = colnames(X)[i])
     
     # observation / data
-    if (i<ncol(X)) { #
+    if (i<=ncol(X)) { #
       ciEnvelope(as.Date(obs.times[t1:t]), 
                  as.numeric(Ybar[, i]) - as.numeric(YCI[, i]) * 1.96, 
                  as.numeric(Ybar[, i]) + as.numeric(YCI[, i]) * 1.96, 

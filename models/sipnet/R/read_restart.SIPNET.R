@@ -43,9 +43,7 @@ read_restart.SIPNET <- function(outdir, runid, stop.time, settings, var.names, p
                      outdir = file.path(outdir, runid), 
                      start.year = lubridate::year(stop.time), 
                      end.year = lubridate::year(stop.time),
-                     variables = var.names,
-                     control=list(trace=control$trace))
-
+                     variables = var.names)
   if(all(is.na(unlist(ens)))) PEcAn.logger::logger.error("No output has been generated. Either asking for the wrong year or error in simulation run.")
   forecast <- list()
   ##I'm kaing the timefrmae for the simulations given the year and the length of the output. leap years needs to be check for 30 or 31 in date
@@ -93,7 +91,7 @@ read_restart.SIPNET <- function(outdir, runid, stop.time, settings, var.names, p
     coarseRootFrac  <- ens$coarse_root_carbon_content[where.index] / wood_total_C
     fineRootFrac    <- ens$fine_root_carbon_content[where.index]   / wood_total_C
     params$restart <- c(abvGrndWoodFrac, coarseRootFrac, fineRootFrac)
-    #names(params$restart) <- c("abvGrndWoodFrac", "coarseRootFrac", "fineRootFrac")
+    names(params$restart) <- c("abvGrndWoodFrac", "coarseRootFrac", "fineRootFrac")
   }
   
 

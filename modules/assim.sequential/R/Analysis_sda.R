@@ -23,7 +23,6 @@ EnKF<-function(setting,Forcast,Observed,...){
                              }, 
                              USE.NAMES = FALSE), 
                       use.names = FALSE)
-  
   #Forcast inputs 
   Q<-Forcast$Q # process error
   Pf<-Forcast$Pf # forcast precision

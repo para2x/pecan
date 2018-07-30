@@ -35,7 +35,7 @@ write_restart.SIPNET <- function(outdir, runid, start.time, stop.time, settings,
 
   # values that will be used for updating other states deterministically depending on the SDA states
   if (is.null(new.params$restart)) {IC_extra<-NULL}else{IC_extra <- data.frame(t(new.params$restart))}
-    
+
   
   if (RENAME) {
     unlink(list.files(file.path(outdir, runid),pattern = "*.nc"))# deleting the nc files
@@ -116,7 +116,6 @@ write_restart.SIPNET <- function(outdir, runid, start.time, stop.time, settings,
   analysis.save.mat <- data.frame(matrix(unlist(analysis.save, use.names = TRUE), nrow = 1))
   colnames(analysis.save.mat) <- names(unlist(analysis.save))
   
-
   do.call(write.config.SIPNET, args = list(defaults = NULL,
                                            trait.values = new.params,
                                            settings = settings,

@@ -338,6 +338,7 @@ write_restart.LINKAGES <- function(outdir, runid, start.time, stop.time,
     }
   
   if (RENAME) {
+    #browser()
     file.rename(file.path(settings$rundir, runid, "linkages.restart.Rdata"), 
                 file.path(settings$rundir, runid, paste0(start.time, "linkages.restart.Rdata")))  # save original output
   }
