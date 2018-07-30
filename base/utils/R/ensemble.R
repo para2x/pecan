@@ -336,7 +336,7 @@ write.ensemble.configs <- function(defaults, ensemble.samples, settings, model,
     return(invisible(list(runs = runs, ensemble.id = ensemble.id, samples=samples)))
     #------------------------------------------------- if we already have everything ------------------        
   }else{
-    #browser()
+    browser()
     #reading retsrat inputs
     inputs<-restart$inputs
     run.id<-restart$runid

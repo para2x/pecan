@@ -147,6 +147,7 @@ sda.enkf.refactored <- function(settings,
     #browser()
     #- Check to see if this is the first run or not and what inputs needs to be sent to write.ensemble configs
     if (t>1){
+      browser()
       restart.arg<-list(runid = run.id, 
                                 start.time = strptime(obs.times[t-1],format="%Y-%m-%d %H:%M:%S"),
                                 stop.time = strptime(obs.times[t],format="%Y-%m-%d %H:%M:%S"), 
