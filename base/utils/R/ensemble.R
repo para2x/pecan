@@ -97,7 +97,6 @@ get.ensemble.samples <- function(ensemble.size, pft.samples, env.samples,
       pft2col <- c(pft2col, rep(i, length(pft.samples[[i]])))
     }
     
-    
     total.sample.num <- sum(sapply(pft.samples, length))
     random.samples <- NULL
     
@@ -182,8 +181,10 @@ get.ensemble.samples <- function(ensemble.size, pft.samples, env.samples,
 ##' @param settings list of PEcAn settings
 ##' @param write.config a model-specific function to write config files, e.g. \link{write.config.ED}  
 ##' @param clean remove old output first?
-##' @param restart In case this is a continuation of an old simulation. restart needs to be a list with name tags of runid, inputs, new.params (parameters), new.state (initial condition), ensemble.id (ensemble ids), start.time and stop.time.
-##' @return list, containing $runs = data frame of runids, and $ensemble.id = the ensemble ID for these runs. Also writes sensitivity analysis configuration files as a side effect
+##' @param restart In case this is a continuation of an old simulation. restart needs to be a list with name tags of runid, inputs, new.params (parameters), new.state (initial condition), ensemble.id (ensemble id), start.time and stop.time.See Details.
+##' @return list, containing $runs = data frame of runids, $ensemble.id = the ensemble ID for these runs and $samples with ids and samples used for each tag.  Also writes sensitivity analysis configuration files as a side effect
+##' @details Resatrt functionality here is developed using model specific functions called write_restart.modelname . You need to make sure first that this function is already exsit for your dersired model.
+##' new state is mainly a dataframe with a different column for different variables for n rows and n sample size. new.params also has similar structure to ensemble.samples which is sent as an argument.
 ##' @export
 ##' @author David LeBauer, Carl Davidson, Hamze Dokoohaki
 write.ensemble.configs <- function(defaults, ensemble.samples, settings, model, 
@@ -233,33 +234,46 @@ write.ensemble.configs <- function(defaults, ensemble.samples, settings, model,
       ensemble.id <- NA
     }
     #-------------------------generating met/param/soil/veg/... for all ensumbles----
-    settings$ensemble$samplingspace -> samp 
+    if (!is.null(con)){
+      #-- lets first find out what tags are required for this model
+      tbl(con,'models')%>%
+        filter(id==settings$model$id%>%as.numeric())%>%
+        inner_join(tbl(con, "modeltypes_formats"),by=c('modeltype_id'))%>% collect%>%
+        filter(required==T)%>%
+        pull(tag)->required_tags
+    }else{
+      required_tags<-c("met","parameters")
+    }
+    
+    #now looking into the xml
+    samp <- settings$ensemble$samplingspace
     #finding who has a parent
-    parents<-lapply(samp,'[[', 'parent')
+    parents <- lapply(samp,'[[', 'parent')
     #order parents based on the need of who has to be first
-    names(samp)[lapply(parents, function(tr) which(names(samp) %in% tr)) %>% unlist()] -> order
+    order <- names(samp)[lapply(parents, function(tr) which(names(samp) %in% tr)) %>% unlist()] 
     #new ordered sampling space
-    samp[c(order, names(samp)[!(names(samp) %in% order)])] -> samp.ordered
+    samp.ordered <- samp[c(order, names(samp)[!(names(samp) %in% order)])]
     #performing the sampling
     samples<-list()
-  
+    # For the tags specified in the xml I do the sampling
     for(i in seq_along(samp.ordered)){
       myparent<-samp.ordered[[i]]$parent # do I have a parent ?
       #call the function responsible for generating the ensemble
-      do.call(input.ens.gen,
-              args = list(settings=settings,
-                          input=names(samp.ordered)[i],
-                          method=samp.ordered[[i]]$method,
-                          parenids=if(!is.null(myparent)) samples[[myparent]], # if I have parent then give me their ids - this is where the ordering matters making sure the parent is done before it's asked
-                          ensemble.samples=ensemble.samples
-                          )
-      )-> samples[[names(samp.ordered[i])]]
-      
+      samples[[names(samp.ordered[i])]] <- input.ens.gen(settings=settings,
+                                                         input=names(samp.ordered)[i],
+                                                         method=samp.ordered[[i]]$method,
+                                                         parent_ids=if( !is.null(myparent)) samples[[myparent]] # if I have parent then give me their ids - this is where the ordering matters making sure the parent is done before it's asked
+      )
     }
-    # if no ensemble piece was in the xml I replicare n times the first element in met and params
-    if ( is.null(samples$met)) samples$met$samples <- rep(settings$run$inputs$met$path[1], settings$ensemble$size)
-
+    
+    # if there is a tag required by the model but it is not specified in the xml then I replicare n times the first element 
+    required_tags%>%
+      purrr::walk(function(r_tag){
+        if (is.null(samples[[r_tag]]) & r_tag!="parameters") samples[[r_tag]]$samples <<- rep(settings$run$inputs[[tolower(r_tag)]]$path[1], settings$ensemble$size)
+      })
+    # if no ensemble piece was in the xml I replicare n times the first element in params
     if ( is.null(samp$parameters) )            samples$parameters$samples <- ensemble.samples %>% purrr::map(~.x[rep(1, settings$ensemble$size) , ])
+    # This where we handle the parameters - ensemble.samples is already generated in run.write.config and it's sent to this function as arg - 
     if ( is.null(samples$parameters$samples) ) samples$parameters$samples <- ensemble.samples
     #------------------------End of generating ensembles-----------------------------------
     # find all inputs that have an id
@@ -271,18 +285,17 @@ write.ensemble.configs <- function(defaults, ensemble.samples, settings, model,
     for (i in seq_len(settings$ensemble$size)) {
       if (!is.null(con)) {
         paramlist <- paste("ensemble=", i, sep = "")
-        run.id <- PEcAn.DB::db.query(paste0(
-          "INSERT INTO runs (model_id, site_id, start_time, finish_time, outdir, ensemble_id, parameter_list) ",
-          "values ('", 
-          settings$model$id, "', '", 
-          settings$run$site$id, "', '", 
-          settings$run$start.date, "', '", 
-          settings$run$end.date, "', '", 
-          settings$run$outdir, "', ", 
-          ensemble.id, ", '", 
-          paramlist, "') ",
-          "RETURNING id"), con = con)[['id']]
+        # inserting this into the table and getting an id back
+        run.qu<-tibble::tibble(model_id = settings$model$id %>% as.numeric(),
+                               site_id = settings$run$site$id %>% as.numeric(),
+                               start_time = settings$run$start.date %>% as.POSIXct(),
+                               finish_time = settings$run$end.date %>% as.POSIXct(),
+                               outdir = ifelse(!is.null(settings$run$outdir), settings$run$outdir, settings$outdir),
+                               ensemble_id = ensemble.id%>%as.numeric(),
+                               parameter_list=paramlist )
         
+        run.id <- db_merge_into (run.qu, 'runs', con= con, by = c('ensemble_id')) %>%
+          pull(id)
         # associate inputs with runs
         if (!is.null(inputs)) {
           for (x in inputs) {
@@ -331,19 +344,18 @@ write.ensemble.configs <- function(defaults, ensemble.samples, settings, model,
       )
       )
       cat(run.id, file = file.path(settings$rundir, "runs.txt"), sep = "\n", append = TRUE)
-     
+      
     }
     return(invisible(list(runs = runs, ensemble.id = ensemble.id, samples=samples)))
     #------------------------------------------------- if we already have everything ------------------        
   }else{
-    browser()
-    #reading retsrat inputs
+    #reading retstart inputs
     inputs<-restart$inputs
     run.id<-restart$runid
     new.params<-restart$new.params
     new.state<-restart$new.state
     ensemble.id<-restart$ensemble.id
-    
+    # stop and start time are required by bc we are wrtting them down into job.sh
     for (i in seq_len(settings$ensemble$size)) {
       do.call(my.write_restart, 
               args =  list(outdir = settings$host$outdir, 
@@ -359,8 +371,8 @@ write.ensemble.configs <- function(defaults, ensemble.samples, settings, model,
     }
     params<-new.params
     return(invisible(list(runs = data.frame(id=run.id), ensemble.id = ensemble.id, samples=list(met=inputs)
-                          )
-                     ))
+    )
+    ))
   }
   
   
@@ -373,35 +385,44 @@ write.ensemble.configs <- function(defaults, ensemble.samples, settings, model,
 #'
 #' @param settings list of PEcAn settings
 #' @param method Method for sampling - For now looping or sampling with replacement is implemented
-#' @param parenids If met's ids are read from a parent what are the ids
-#' @param ... 
+#' @param parent_ids This is basically the order of the paths that the parent is sampled.See Details.
 #'
-#' @return
+#' @return For a given input/tag in the pecan xml and a method, this function returns a list with $id showing the order of sampling and $samples with samples of that input.
+#' @details If for example met was a parent and it's sampling method resulted in choosing the first, third and fourth samples, these are the ids that need to be sent as
+#' parent_ids to this function.
 #' @export
 #'
 #' @examples
-input.ens.gen<-function(settings,input,method="sampling",parenids=NULL,...){
+#' \dontrun{input.ens.gen(settings,"met","sampling")}
+#'  
+input.ens.gen<-function(settings,input,method="sampling",parent_ids=NULL){
+  
   #-- reading the dots and exposing them to the inside of the function
   samples<-list()
-  dots<-list(...)
-  if (length(dots) > 0 ) lapply(names(dots), function(name){assign(name, dots[[name]], pos=1 )})
-
-  if ( tolower(input)=="met" ){
-      #-- assing the sample ids based on different scenarios
-      if(!is.null(parenids)) {
-        samples$ids<-parenids$ids  
-        sample$ids[samples$ids > settings$run$inputs$met$path %>% length] -> out.of.sample.size
-        #sample for those that our outside the param size - forexample, parent id may send id number 200 but we have only100 sample for param
-        samples(settings$run$inputs$met$path%>%seq_along(), out.of.sample.size, replace = T) -> samples$ids[samples$ids%in%out.of.sample.size]
-      }else if( tolower(method)=="sampling") {
-        samples$ids <- sample(settings$run$inputs$met$path %>% seq_along(), settings$ensemble$size, replace = T)  
-      }else if( tolower(method)=="looping"){
-        samples$ids <- rep_len(settings$run$inputs$met$path %>% seq_along(), length.out=settings$ensemble$size)
-      }
-    #using the sample ids
-    samples$samples<-settings$run$inputs$met$path[samples$ids]
+  samples$ids<-c()
+  #
+  if (is.null(method)) return(NULL)
+  # parameter is exceptional it needs to be handled spearatly
+  if (input=="parameters") return(NULL)
+  #-- assing the sample ids based on different scenarios
+  if(!is.null(parent_ids)) {
+    samples$ids<-parent_ids$ids  
+    out.of.sample.size <- sample$ids[samples$ids > settings$run$inputs[[tolower(input)]]$path %>% length]
+    #sample for those that our outside the param size - forexample, parent id may send id number 200 but we have only100 sample for param
+    samples$ids[samples$ids%in%out.of.sample.size] <- samples(settings$run$inputs[[tolower(input)]]$path %>% seq_along(),
+                                                              out.of.sample.size,
+                                                              replace = T)
+  }else if( tolower(method)=="sampling") {
+    samples$ids <- sample(settings$run$inputs[[tolower(input)]]$path %>% seq_along(),
+                          settings$ensemble$size,
+                          replace = T)  
+  }else if( tolower(method)=="looping"){
+    samples$ids <- rep_len(settings$run$inputs[[tolower(input)]]$path %>% seq_along(), length.out=settings$ensemble$size)
   }
-
-
+  #using the sample ids
+  samples$samples<-settings$run$inputs[[tolower(input)]]$path[samples$ids]
+  
+  
+  
   return(samples)
 }
