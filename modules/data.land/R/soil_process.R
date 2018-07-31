@@ -11,25 +11,20 @@
 #' @examples
 soil_process <- function(settings, input, dbfiles, overwrite = FALSE,run.local=TRUE){
   
-  browser()
-  
-  if(input$soil$source=="PalEON_soil" & is.null(input$id)){
+  if(input$soil$source=="PalEON_soil" && is.null(input$id)){
     PEcAn.logger::logger.severe("currently soil_process requires an input ID to be specified")
     return(NULL)
   }
   
   if(is.null(input$soil$source)){
     input$soil$source <- "PalEON_soil"  ## temporarily hardcoding in the only source
-                                   ## in the future this should throw an error
+    ## in the future this should throw an error
   }
-  
-
   # Extract info from settings and setup
   site       <- settings$run$site
   model      <- settings$model$type
   host       <- settings$host
   dbparms    <- settings$database
-  
   # set up bety connection
   bety <- dplyr::src_postgres(dbname   = dbparms$bety$dbname, 
                               host     = dbparms$bety$host, 
@@ -51,8 +46,8 @@ soil_process <- function(settings, input, dbfiles, overwrite = FALSE,run.local=T
     newfile<-extract_soil_gssurgo(outfolder,lat = latlon$lat,lon=latlon$lon)
     return(newfile)
   }
-  
-   #--------------------------------------------------------------------------------------------------# 
+  #--------------------------------------------------------------------------------------------------# 
+  # if we are reading  PalEON_soil
   # get existing input info
   source.input <- PEcAn.DB::db.query(paste0("SELECT * from Inputs where id =",input$id),con)
   if(run.local){
@@ -70,7 +65,6 @@ soil_process <- function(settings, input, dbfiles, overwrite = FALSE,run.local=T
     }
   }  ## otherwise continue to process soil
   
-
   # set up host information
   machine.host <- ifelse(host == "localhost" || host$name == "localhost" || run.local,
                          PEcAn.remote::fqdn(), host$name)
