@@ -17,14 +17,14 @@ sda.enkf.refactored <- function(settings,
   # Y/R    - Observed data and covariance
   # mu.a/Pa  - afetr analysis - new mean and covariance
   # nt is the length of observed  
-  # When processvar == FALSE it means we are doin EnKF and when it's TRUE Generlized Ensumble Filter
-  # Generlized Ensumble Filter NEEDS process variance to avoid filter divergence and it does not
-  # have analytical solution - needs MCMC
-  # X stores IC of state variables and then collects state variables in each loop
-  # Y stores the observed mean
-  # Assimilation is done for start:end setting assimilation section - if it's a continuation of another sda (restart)
-  # then start date in the second xml should be the same as the first pecan xml
-  # Models that they wanna be added for SDA their read_restart needs to be in a certain format. look into read_restart_SIPNET
+  # When processvar == FALSE it means we are doing EnKF and when it's TRUE Generlized Ensemble Filter
+  # Generlized Ensemble Filter NEEDS process variance to avoid filter divergence and it does not
+  # have analytical solution - needs MCMC.
+  # X stores IC of state variables and then collects state variables in each loop.
+  # Y stores the observed mean.
+  # Assimilation is done for start:end setting assimilation section. if it's a continuation of another sda (restart)
+  # then start date in the second xml should be the same as the first sda and pecan xml.
+  # Models that they wanna be added for SDA their read_restart needs to be in a certain format. Look into read_restart_SIPNET
   #------------------------  
   ymd_hms <- lubridate::ymd_hms
   hms     <- lubridate::hms
