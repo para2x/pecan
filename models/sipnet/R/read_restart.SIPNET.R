@@ -96,7 +96,7 @@ read_restart.SIPNET <- function(outdir, runid, stop.time, settings, var.names, p
   
 
   #print(runid)
-  X_tmp <- list(X = list(Variables=forecast,When=Timeframe[where.index]), params = params)
+  X_tmp <- list(X =unlist(forecast), params = params, When=Timeframe[where.index])
                 
   return(X_tmp)
 } # read_restart.SIPNET

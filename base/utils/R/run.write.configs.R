@@ -24,9 +24,9 @@
 ##'    files within this workflow, to avoid confusion).
 ##'
 ##' @return an updated settings list, which includes ensemble IDs for SA and ensemble analysis
-##' @export
 ##'
 ##' @author David LeBauer, Shawn Serbin, Ryan Kelly, Mike Dietze
+##' @export
 run.write.configs <- function(settings, write = TRUE, ens.sample.method = "uniform", 
                               posterior.files = rep(NA, length(settings$pfts)), 
                               overwrite = TRUE) {
@@ -42,8 +42,8 @@ run.write.configs <- function(settings, write = TRUE, ens.sample.method = "unifo
       ## otherwise, check to see if posteriorid exists
       if (!is.null(settings$pfts[[i]]$posteriorid)) {
         files <- PEcAn.DB::dbfile.check("Posterior",
-                              settings$pfts[[i]]$posteriorid, 
-                              con, settings$host$name, return.all = TRUE)
+                                        settings$pfts[[i]]$posteriorid, 
+                                        con, settings$host$name, return.all = TRUE)
         pid <- grep("post.distns.*Rdata", files$file_name)  ## is there a posterior file?
         if (length(pid) == 0) {
           pid <- grep("prior.distns.Rdata", files$file_name)  ## is there a prior file?
@@ -77,8 +77,8 @@ run.write.configs <- function(settings, write = TRUE, ens.sample.method = "unifo
   my.write.config <- paste0("write.config.",model)
   if (!exists(my.write.config)) {
     PEcAn.logger::logger.error(my.write.config, 
-                 "does not exist, please make sure that the model package contains a function called", 
-                 my.write.config)
+                               "does not exist, please make sure that the model package contains a function called", 
+                               my.write.config)
   }
   
   ## Prepare for model output.  Clean up any old config files (if exists)
@@ -155,7 +155,7 @@ run.write.configs <- function(settings, write = TRUE, ens.sample.method = "unifo
 } # run.write.configs
 
 
-##' @export
+#' @export
 runModule.run.write.configs <- function(settings, overwrite = TRUE) {
   .Deprecated("PEcAn.workflow::runModule.run.write.configs")
   if (PEcAn.settings::is.MultiSettings(settings)) {
@@ -166,12 +166,10 @@ runModule.run.write.configs <- function(settings, overwrite = TRUE) {
     return(PEcAn.settings::papply(settings, runModule.run.write.configs, overwrite = FALSE))
   } else if (PEcAn.settings::is.Settings(settings)) {
     write <- settings$database$bety$write
-    
-    ens.sample.method <- settings$ensemble$samplingspace$parameters$method
-    
-    if (is.null(settings$ensemble$samplingspace$parameters$method)) ens.sample.method <-"uniform"
-    
-    return(run.write.configs(settings, write, ens.sample.method, overwrite = overwrite))
+    # double check making sure we have method for parameter sampling
+    if (is.null(settings$ensemble$samplingspace$parameters$method)) settings$ensemble$samplingspace$parameters$method <- "uniform"
+    ens.sample.method <-  settings$ensemble$samplingspace$parameters$method
+    return(PEcAn.workflow:run.write.configs(settings, write, ens.sample.method, overwrite = overwrite))
   } else {
     stop("runModule.run.write.configs only works with Settings or MultiSettings")
   }

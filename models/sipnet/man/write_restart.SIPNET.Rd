@@ -4,8 +4,13 @@
 \alias{write_restart.SIPNET}
 \title{write_restart.SIPNET}
 \usage{
+<<<<<<< HEAD
 write_restart.SIPNET(outdir, runid, start.time, stop.time, settings, new.state,
   RENAME = TRUE, new.params = FALSE, inputs = NULL)
+=======
+write_restart.SIPNET(outdir, runid, start.time, stop.time, settings,
+  new.state, RENAME = TRUE, new.params = FALSE, inputs)
+>>>>>>> 9db3fc4f337e30260327060aa73e0e4c91506a8a
 }
 \arguments{
 \item{outdir}{output directory}

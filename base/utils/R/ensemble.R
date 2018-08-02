@@ -24,6 +24,7 @@
 #--------------------------------------------------------------------------------------------------#
 read.ensemble.output <- function(ensemble.size, pecandir, outdir, start.year, end.year, 
                                  variable, ens.run.ids = NULL) {
+  .Deprecated("PEcAn.uncertainty::read.ensemble.output")
   if (is.null(ens.run.ids)) {
     samples.file <- file.path(pecandir, "samples.Rdata")
     if (file.exists(samples.file)) {
@@ -77,7 +78,7 @@ read.ensemble.output <- function(ensemble.size, pecandir, outdir, start.year, en
 ##' @author David LeBauer, Istem Fer
 get.ensemble.samples <- function(ensemble.size, pft.samples, env.samples, 
                                  method = "uniform", param.names = NULL, ...) {
-  
+  .Deprecated("PEcAn.uncertainty::get.ensemble.samples")
   if (is.null(method)) {
     PEcAn.logger::logger.info("No sampling method supplied, defaulting to uniform random sampling")
     method <- "uniform"
@@ -183,13 +184,16 @@ get.ensemble.samples <- function(ensemble.size, pft.samples, env.samples,
 ##' @param clean remove old output first?
 ##' @param restart In case this is a continuation of an old simulation. restart needs to be a list with name tags of runid, inputs, new.params (parameters), new.state (initial condition), ensemble.id (ensemble id), start.time and stop.time.See Details.
 ##' @return list, containing $runs = data frame of runids, $ensemble.id = the ensemble ID for these runs and $samples with ids and samples used for each tag.  Also writes sensitivity analysis configuration files as a side effect
-##' @details Resatrt functionality here is developed using model specific functions called write_restart.modelname . You need to make sure first that this function is already exsit for your dersired model.
-##' new state is mainly a dataframe with a different column for different variables for n rows and n sample size. new.params also has similar structure to ensemble.samples which is sent as an argument.
+##' @details The restart functionality is developed using model specific functions by calling write_restart.modelname function. First, you need to make sure that this function is already exist for your desired model.See here \url{https://pecanproject.github.io/pecan-documentation/master/pecan-models.html}
+##' new state is a dataframe with a different column for each state variable. The number of the rows in this dataframe needs to be the same as the ensemble size.
+##' State variables that you can use for setting up the intial conditions differs for different models. You may check the documentation of the write_restart.modelname your model.
+##' The units for the state variables need to be in the PEcAn standard units which can be found in \link{standard_vars}.
+##' new.params also has similar structure to ensemble.samples which is sent as an argument.
 ##' @export
 ##' @author David LeBauer, Carl Davidson, Hamze Dokoohaki
 write.ensemble.configs <- function(defaults, ensemble.samples, settings, model, 
                                    clean = FALSE, write.to.db = TRUE,restart=NULL) {
-  
+  .Deprecated("PEcAn.uncertainty::write.ensemble.configs")
   my.write.config <- paste("write.config.", model, sep = "")
   my.write_restart <- paste0("write_restart.", model)
   
@@ -266,12 +270,12 @@ write.ensemble.configs <- function(defaults, ensemble.samples, settings, model,
       )
     }
     
-    # if there is a tag required by the model but it is not specified in the xml then I replicare n times the first element 
+    # if there is a tag required by the model but it is not specified in the xml then I replicate n times the first element 
     required_tags%>%
       purrr::walk(function(r_tag){
         if (is.null(samples[[r_tag]]) & r_tag!="parameters") samples[[r_tag]]$samples <<- rep(settings$run$inputs[[tolower(r_tag)]]$path[1], settings$ensemble$size)
       })
-    # if no ensemble piece was in the xml I replicare n times the first element in params
+    # if no ensemble piece was in the xml I replicate n times the first element in params
     if ( is.null(samp$parameters) )            samples$parameters$samples <- ensemble.samples %>% purrr::map(~.x[rep(1, settings$ensemble$size) , ])
     # This where we handle the parameters - ensemble.samples is already generated in run.write.config and it's sent to this function as arg - 
     if ( is.null(samples$parameters$samples) ) samples$parameters$samples <- ensemble.samples
@@ -286,16 +290,17 @@ write.ensemble.configs <- function(defaults, ensemble.samples, settings, model,
       if (!is.null(con)) {
         paramlist <- paste("ensemble=", i, sep = "")
         # inserting this into the table and getting an id back
-        run.qu<-tibble::tibble(model_id = settings$model$id %>% as.numeric(),
-                               site_id = settings$run$site$id %>% as.numeric(),
-                               start_time = settings$run$start.date %>% as.POSIXct(),
-                               finish_time = settings$run$end.date %>% as.POSIXct(),
-                               outdir = ifelse(!is.null(settings$run$outdir), settings$run$outdir, settings$outdir),
-                               ensemble_id = ensemble.id%>%as.numeric(),
-                               parameter_list=paramlist )
-        
-        run.id <- db_merge_into (run.qu, 'runs', con= con, by = c('ensemble_id')) %>%
-          pull(id)
+        run.id <- PEcAn.DB::db.query(paste0(
+          "INSERT INTO runs (model_id, site_id, start_time, finish_time, outdir, ensemble_id, parameter_list) ",
+          "values ('", 
+          settings$model$id, "', '", 
+          settings$run$site$id, "', '", 
+          settings$run$start.date, "', '", 
+          settings$run$end.date, "', '", 
+          settings$run$outdir, "', ", 
+          ensemble.id, ", '", 
+          paramlist, "') ",
+          "RETURNING id"), con = con)[['id']]
         # associate inputs with runs
         if (!is.null(inputs)) {
           for (x in inputs) {
@@ -381,7 +386,7 @@ write.ensemble.configs <- function(defaults, ensemble.samples, settings, model,
 
 
 
-#' Function for reurning the met ensuble based on sampling method, parent or etc
+#' Function for generating samples based on sampling method, parent or etc
 #'
 #' @param settings list of PEcAn settings
 #' @param method Method for sampling - For now looping or sampling with replacement is implemented
@@ -396,7 +401,7 @@ write.ensemble.configs <- function(defaults, ensemble.samples, settings, model,
 #' \dontrun{input.ens.gen(settings,"met","sampling")}
 #'  
 input.ens.gen<-function(settings,input,method="sampling",parent_ids=NULL){
-  
+  .Deprecated("PEcAn.uncertainty::input.ens.gen")
   #-- reading the dots and exposing them to the inside of the function
   samples<-list()
   samples$ids<-c()
