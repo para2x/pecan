@@ -2,11 +2,9 @@
 % Please edit documentation in R/ensemble.R
 \name{input.ens.gen}
 \alias{input.ens.gen}
-
 \title{Function for generating samples based on sampling method, parent or etc}
 \usage{
 input.ens.gen(settings, input, method = "sampling", parent_ids = NULL)
-
 }
 \arguments{
 \item{settings}{list of PEcAn settings}
@@ -28,5 +26,4 @@ parent_ids to this function.
 \examples{
 \dontrun{input.ens.gen(settings,"met","sampling")}
  
-
 }

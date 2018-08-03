@@ -85,7 +85,6 @@ load_data_paleon_sda <- function(settings){
       obvs[[i]] <- PEcAn.benchmark::load_data(data.path, format, start_year = lubridate::year(start_date), end_year = lubridate::year(end_date), site)
     
       variable <- intersect(var.names,colnames(obvs[[i]]))
-    browser()
     ### Tree Ring Data Product
     if(format_id[[i]] == '1000000040'){
       obvs[[i]] <- obvs[[i]][obvs[[i]]$model_type=='Model RW + Census',]

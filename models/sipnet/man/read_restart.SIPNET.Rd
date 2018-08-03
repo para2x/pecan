@@ -8,9 +8,10 @@ read_restart.SIPNET(outdir, runid, stop.time, settings, var.names, params,
   var.map = list(c("leaf_carbon_content", "litter_carbon_content",
   "TotSoilCarb", "SoilMoistFrac", "SWE", "GWBI", "AbvGrndWood", "AGB"),
   c("LeafC", "Litter", "TotSoilCarb", "SoilMoistFrac", "SWE", "GWBI",
-  "AbvGrndWood", "AGB"), c("", "", "", "", "", "kg/m^2/s", "kg/m^2", ""), c("",
-  "", "", "", "", "Mg/ha/yr", "Mg/ha", ""), c("", "", "", "", "", mean, "",
-  "")), timez = "UTC", When = NULL, control = list(trace = F), ...)
+  "AbvGrndWood", "AGB"), c("", "", "", "", "", "kg/m^2/s", "kg/m^2", ""),
+  c("", "", "", "", "", "Mg/ha/yr", "Mg/ha", ""), c("", "", "", "", "",
+  mean, "", "")), timez = "UTC", When = NULL, control = list(trace =
+  F), ...)
 }
 \arguments{
 \item{outdir}{Output directory}

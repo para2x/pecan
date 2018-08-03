@@ -1,5 +1,5 @@
 
-
+#' @export
 interactive.plotting.sda<-function(settings,t,obs.times,obs.mean,obs.cov,obs,X,FORECAST,ANALYSIS){
   #Defining some colors
   t1         <- 1
@@ -101,7 +101,7 @@ interactive.plotting.sda<-function(settings,t,obs.times,obs.mean,obs.cov,obs,X,F
   }
 }
 
-
+#' @export
 postana.timeser.plotting.sda<-function(settings,t,obs.times,obs.mean,obs.cov,obs,X,FORECAST,ANALYSIS){
   #Defining some colors
   t1         <- 1
@@ -204,7 +204,7 @@ postana.timeser.plotting.sda<-function(settings,t,obs.times,obs.mean,obs.cov,obs
   dev.off()
   
 }
-
+#' @export
 postana.bias.plotting.sda<-function(settings,t,obs.times,obs.mean,obs.cov,obs,X,FORECAST,ANALYSIS){
   #Defining some colors
   t1         <- 1
@@ -279,7 +279,7 @@ postana.bias.plotting.sda<-function(settings,t,obs.times,obs.mean,obs.cov,obs,X,
   dev.off()
   
 }
-
+#' @export
 postana.bias.plotting.sda<-function(t,obs.times,X,aqq,bqq){
   #Defining some colors
   t1         <- 1

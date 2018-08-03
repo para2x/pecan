@@ -1,3 +1,4 @@
+#' @export
 adj.ens<-function(Pf,X,X.new,mu.f,mu.a,Pa,processvar){
   S_f  <- svd(Pf)
   L_f  <- S_f$d

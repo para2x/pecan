@@ -1,21 +1,24 @@
+#' @export
 Analysis.sda<-function(settings,
                        FUN,
                        Forcast=list(Pf=NULL,mu.f=NULL,Q=NULL,X=NULL),
                        Observed=list(R=NULL,Y=NULL),
                        ...
                        ){
-  dots<-list(...)
   if (is.null(FUN)) stop('Analysis function needs to be defined !')
   FUN(settings,Forcast,Observed,...)
 
 }
 
-
+#' @export
 EnKF<-function(setting,Forcast,Observed,...){
   #------------------------------Setup
   #-- reading the dots and exposing them to the inside of the function
   dots<-list(...)
-  if (length(dots)>0) lapply(names(dots),function(name){assign(name,dots[[name]], pos=1 )})
+  if (length(dots)>0) lapply(names(dots),function(name){assign(name,dots[[name]])})
+  for(i in seq_along(dots)) assign(names(dots)[i],dots[[names(dots)[i]]])
+  
+
   #General
   var.names <- unlist(sapply(settings$state.data.assimilation$state.variable, 
                              function(x) {
@@ -54,7 +57,7 @@ EnKF<-function(setting,Forcast,Observed,...){
   Pa   <- (diag(ncol(X)) - K %*% H) %*% Pf
   return(list(mu.f = mu.f, Pf = Pf, mu.a = mu.a, Pa = Pa))
 }
-
+#' @export
 GEF<-function(setting,Forcast,Observed,...){
   #------------------------------Setup
   #-- reading the dots and exposing them to the inside of the function

@@ -5,6 +5,8 @@
 \title{Extract soil data from gssurgo}
 \usage{
 extract_soil_gssurgo(outdir, lat, lon)
+
+extract_soil_gssurgo(outdir, lat, lon)
 }
 \arguments{
 \item{outdir}{Output directory for writing down the netcdf file}
@@ -12,12 +14,20 @@ extract_soil_gssurgo(outdir, lat, lon)
 \item{lat}{Latitude}
 
 \item{lon}{Longitude}
+
+\item{outdir}{}
+
+\item{lat}{}
+
+\item{lon}{}
 }
 \value{
 It returns the address for the generated soil netcdf file
 }
 \description{
 Extract soil data from gssurgo
+
+Extract soil data
 }
 \examples{
 outdir  <- "~/paleon/envTest"
@@ -26,7 +36,15 @@ lon     <- -80
 \dontrun{
    PEcAn.data.land::extract_soil_gssurgo(outdir,lat,lon)
 }
+outdir  <- "~/paleon/envTest"
+lat     <- 40
+lon     <- -80
+\dontrun{
+   PEcAn.data.land::extract_soil_gssurgo(outdir,lat,lon)
+}
 }
 \author{
+Hamze Dokoohaki
+
 Hamze Dokoohaki
 }

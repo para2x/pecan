@@ -4,12 +4,10 @@
 \alias{read_restart.LINKAGES}
 \title{read_restart.LINKAGES}
 \usage{
-
-read_restart.LINKAGES(outdir, runid, stop.time, settings, var.names = NULL,
-  params = NULL, var.map = list(c("AGB.pft", "TotSoilCarb"), c("AGB.pft",
-  "TotSoilCarb"), c("", ""), c("", ""), c("", "")), timez = "UTC",
-  When = NULL, ...)
-
+read_restart.LINKAGES(outdir, runid, stop.time, settings,
+  var.names = NULL, params = NULL, var.map = list(c("AGB.pft",
+  "TotSoilCarb"), c("AGB.pft", "TotSoilCarb"), c("", ""), c("", ""), c("",
+  "")), timez = "UTC", When = NULL, ...)
 }
 \arguments{
 \item{outdir}{output directory}

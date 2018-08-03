@@ -1,3 +1,4 @@
+#' @export
 sda.enkf.refactored <- function(settings,
                                 obs.mean,
                                 obs.cov,
@@ -139,7 +140,6 @@ sda.enkf.refactored <- function(settings,
   ### loop over time                                                    ###----
   ###-------------------------------------------------------------------### 
   while(t<nt){
-
     t<-t+1
     # do we have obs for this time - what year is it ?
     obs <- which(!is.na(obs.mean[[t]]))
@@ -147,7 +147,6 @@ sda.enkf.refactored <- function(settings,
     #browser()
     #- Check to see if this is the first run or not and what inputs needs to be sent to write.ensemble configs
     if (t>1){
-      browser()
       restart.arg<-list(runid = run.id, 
                                 start.time = strptime(obs.times[t-1],format="%Y-%m-%d %H:%M:%S"),
                                 stop.time = strptime(obs.times[t],format="%Y-%m-%d %H:%M:%S"), 
@@ -195,21 +194,13 @@ sda.enkf.refactored <- function(settings,
       if (!is.null(X_tmp[[i]]$params)) new.params[[i]] <- X_tmp[[i]]$params
         
     }
+    
+    X <- do.call(rbind, X)
 
-    #--- this could be expanded to find the exact date in ens.outputs
-     X2<-lapply(X,function(lis){
-        #take out the year of observation
-        (lis)[[1]]%>%unlist()
-      })
-
-     X <- do.call(rbind, X2)
-
-  print(X)
     FORECAST[[t]] <- X
     mu.f <- as.numeric(apply(X, 2, mean, na.rm = TRUE))
     Pf <- cov(X)
     diag(Pf)[which(diag(Pf) == 0)] <- 0.1 ## hack for zero variance
-
     ###-------------------------------------------------------------------###
     ###  preparing OBS                                                    ###
     ###-------------------------------------------------------------------###  
@@ -234,7 +225,6 @@ sda.enkf.refactored <- function(settings,
  ###-------------------------------------------------------------------###
       if(processvar == FALSE){an.method<-EnKF  }else{    an.method<-GEF   }  
       #-analysis function
-      #browser()
         enkf.params[[t]] <-Analysis.sda(settings,
                                         FUN=an.method,
                                         Forcast=list(Pf=Pf,mu.f=mu.f,Q=Q,X=X),
