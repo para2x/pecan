@@ -196,11 +196,11 @@ sda.enkf.refactored <- function(settings,
     }
     
     X <- do.call(rbind, X)
-
     FORECAST[[t]] <- X
     mu.f <- as.numeric(apply(X, 2, mean, na.rm = TRUE))
     Pf <- cov(X)
     diag(Pf)[which(diag(Pf) == 0)] <- 0.1 ## hack for zero variance
+
     ###-------------------------------------------------------------------###
     ###  preparing OBS                                                    ###
     ###-------------------------------------------------------------------###  
@@ -315,7 +315,8 @@ sda.enkf.refactored <- function(settings,
   ###-------------------------------------------------------------------###
   ### time series plots                                                 ###-----
   ###-------------------------------------------------------------------### 
-   if(control$TimeseriesPlot) postana.timeser.plotting.sda(settings,t,obs.times,obs.mean,obs.cov,obs,X,FORECAST,ANALYSIS)
+  post.alaysis.ggplot(settings,t,obs.times,obs.mean,obs.cov,obs,X,FORECAST,ANALYSIS)
+  #if(control$TimeseriesPlot) postana.timeser.plotting.sda(settings,t,obs.times,obs.mean,obs.cov,obs,X,FORECAST,ANALYSIS)
   ###-------------------------------------------------------------------###
   ### bias diagnostics                                                  ###----
   ###-------------------------------------------------------------------###

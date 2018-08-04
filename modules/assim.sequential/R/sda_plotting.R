@@ -147,8 +147,12 @@ postana.timeser.plotting.sda<-function(settings,t,obs.times,obs.mean,obs.cov,obs
   YCI[is.na(YCI)]<-0
   
   YCI <- YCI[,Y.order]
+  
+  
+  
   Xsum <- plyr::laply(FORECAST, function(x) { mean(rowSums(x[,1:length(names.y)], na.rm = TRUE)) })[t1:t]
   Xasum <- plyr::laply(ANALYSIS, function(x) { mean(rowSums(x[,1:length(names.y)], na.rm = TRUE)) })[t1:t]
+  browser()
   #------For each state variable 
   for (i in seq_len(ncol(X))) {
     Xbar <- plyr::laply(FORECAST[t1:t], function(x) {
@@ -172,7 +176,7 @@ postana.timeser.plotting.sda<-function(settings,t,obs.times,obs.mean,obs.cov,obs
     
     plot(as.Date(obs.times[t1:t]),
          Xbar, 
-         ylim = range(c(XaCI, Xci,Ybar[, i]), na.rm = TRUE),
+         ylim = range(c(XaCI, Xci,Ybar[, 1]), na.rm = TRUE),
          type = "n", 
          xlab = "Year", 
          ylab = ylab.names[grep(colnames(X)[i], var.names)],
@@ -310,4 +314,96 @@ postana.bias.plotting.sda<-function(t,obs.times,X,aqq,bqq){
        ylab = "Degrees of Freedom", xlab = "Time")
   
   dev.off()
+}
+
+#'@export
+post.alaysis.ggplot <- function(settings,t,obs.times,obs.mean,obs.cov,obs,X,FORECAST,ANALYSIS){
+  #Defining some colors
+  t1         <- 1
+  pink       <- col2rgb("deeppink")
+  alphapink  <- rgb(pink[1], pink[2], pink[3], 180, max = 255)
+  green      <- col2rgb("green")
+  alphagreen <- rgb(green[1], green[2], green[3], 75, max = 255)
+  blue       <- col2rgb("blue")
+  alphablue  <- rgb(blue[1], blue[2], blue[3], 75, max = 255)
+  purple       <- col2rgb("purple")
+  alphapurple <- rgb(purple[1], purple[2], purple[3], 75, max = 255)
+  brown       <- col2rgb("brown")
+  alphabrown <- rgb(brown[1], brown[2], brown[3], 75, max = 255)
+  ylab.names <- unlist(sapply(settings$state.data.assimilation$state.variable, 
+                              function(x) { x })[2, ], use.names = FALSE)
+  var.names <- unlist(sapply(settings$state.data.assimilation$state.variable, 
+                             function(x) {
+                               x$variable.name
+                             }, 
+                             USE.NAMES = FALSE), 
+                      use.names = FALSE)
+  #----
+  #Analysis & Forcast cleaning and STAT
+  All.my.data <- list(FORECAST=FORECAST,ANALYSIS=ANALYSIS)
+  
+  c('FORECAST','ANALYSIS')%>%
+    purrr::map_df(function(listFA){
+      All.my.data[[listFA]]%>%
+        purrr::map_df(function(state.vars){
+          #finding the mean and Ci for all the state variables
+          means <- apply(state.vars,2,mean,na.rm=T)
+          CI <- apply(state.vars,2,quantile,c(0.025, 0.975),na.rm = T)
+          #putting them into a nice clean df
+          rbind(means,CI) %>% t %>%
+            as.data.frame()%>%
+            mutate(Variables=paste(colnames(state.vars)))%>%
+            tidyr::replace_na(list(0))
+          
+          
+        })%>%mutate(Type=listFA,
+                    Date=rep(obs.times[t1:t], each=colnames((All.my.data[[listFA]])[[1]]) %>% length())
+        )
+      
+    })->ready.FA
+  
+  
+  #Observed data
+  #first merging mean and conv based on the day
+  ready.to.plot<-names(obs.mean)%>%
+    purrr::map(~c(obs.mean[.x],obs.cov[.x],.x)%>%
+                 setNames(c('means','covs','Date')))%>%
+    setNames(names(obs.mean))%>%
+    purrr::map_df(function(one.day.data){
+      #CI
+      purrr::map2_df(sqrt(diag(one.day.data$covs)), one.day.data$means,
+                     function(sd,mean){
+                       data.frame(mean-(sd*1.96),mean+(sd*1.96))
+                       
+                     })%>%
+        mutate(Variables=colnames(one.day.data$means))%>%
+        `colnames<-`(c('2.5%','97.5%','Variables'))%>%
+        mutate(means=one.day.data$means%>%unlist,
+               Type="Data",
+               Date=one.day.data$Date%>%as.POSIXct())
+      
+      
+    })%>%
+    filter(Variables %in% var.names)%>%
+    bind_rows(ready.FA)
+  
+  colorP<-"Set1"
+  ready.to.plot%>%
+    ggplot(aes(x=Date))+
+    geom_ribbon(aes(ymin=`2.5%`,ymax=`97.5%`,fill=Type),alpha=0.75,color="black")+
+    geom_line(aes(y=means, color=Type),lwd=1.02,linetype=2)+
+    geom_point(aes(y=means, color=Type),size=2)+
+    geom_point(aes(y=`2.5%`, color=Type),size=2)+
+    geom_point(aes(y=`97.5%`, color=Type),size=2)+
+    facet_wrap(.~Variables,scales = "free")+
+    scale_fill_brewer(palette = colorP,name="",direction = -1)+
+    scale_color_brewer(palette = colorP,name="",direction = -1)+
+    theme_bw(base_size = 17)+
+    theme(legend.position = "top",
+          strip.background = element_blank())->pos.a.plot
+  
+  ggsave("SDA.pdf",pos.a.plot,width = 12,height = 7)
+  
+  
+  
 }
