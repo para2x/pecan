@@ -12,6 +12,7 @@ Analysis.sda<-function(settings,
 
 #' @export
 EnKF<-function(setting,Forcast,Observed,...){
+
   #------------------------------Setup
   #-- reading the dots and exposing them to the inside of the function
   dots<-list(...)

@@ -76,6 +76,8 @@ sda.enkf <- function(settings, obs.mean, obs.cov, IC = NULL, Q = NULL, adjustmen
   ###-------------------------------------------------------------------###
   ### load model specific input ensembles for initial runs              ###
   ###-------------------------------------------------------------------### 
+  browser()
+  nens<-5
   n.inputs <- max(table(names(settings$run$inputs)))
   if(n.inputs > nens){
     sampleIDs <- 1:nens
@@ -84,7 +86,7 @@ sda.enkf <- function(settings, obs.mean, obs.cov, IC = NULL, Q = NULL, adjustmen
   }
   
 
-  if(is.null(restart) & is.null(restart$ens.inputs)){
+  if(is.null(restart) & is.null(restart$ens.inputs) & F){
     ens.inputs <- sample_met(settings,nens)
   }else {
     ens.inputs <- restart$ens.inputs
@@ -159,8 +161,8 @@ sda.enkf <- function(settings, obs.mean, obs.cov, IC = NULL, Q = NULL, adjustmen
   
   ## Load Parameters
   if(is.null(restart) & is.null(restart$params)){
-    if (sample_parameters == TRUE) {
-      settings$ensemble$size <- settings$state.data.assimilation$n.ensemble
+    if (TRUE) {
+      settings$ensemble$size <- 5#settings$state.data.assimilation$n.ensemble
     } else {
       settings$ensemble$size <- 1
     }
@@ -195,6 +197,7 @@ sda.enkf <- function(settings, obs.mean, obs.cov, IC = NULL, Q = NULL, adjustmen
     if ("env" %in% names(ensemble.samples)) {
       ensemble.samples$env <- NULL
     }
+      sample_parameters<-T
 #------------------ For making the ensembuls this makes the new params - trait values    
     params <- list()
     for (i in seq_len(nens)) {
@@ -588,6 +591,23 @@ sda.enkf <- function(settings, obs.mean, obs.cov, IC = NULL, Q = NULL, adjustmen
         Pa   <- (diag(ncol(X)) - K %*% H) %*% Pf
         enkf.params[[t]] <- list(mu.f = mu.f, Pf = Pf, mu.a = mu.a, Pa = Pa)
         
+        
+        #cat ("\n --------------------------- ",obs.year," ---------------------------\n")
+        cat ("\n --------------Obs mean----------- \n")
+        print(Y)
+        cat ("\n --------------Obs Cov ----------- \n")
+        print(R)
+        cat ("\n --------------Forcast mean ----------- \n")
+        print(enkf.params[[t]]$mu.f)
+        cat ("\n --------------Forcast Cov ----------- \n")
+        print(enkf.params[[t]]$Pf)
+        cat ("\n --------------Analysis mean ----------- \n")
+        print(t(enkf.params[[t]]$mu.a))
+        cat ("\n --------------Analysis Cov ----------- \n")
+        print(enkf.params[[t]]$Pa)
+        cat ("\n ------------------------------------------------------\n")
+        browser()
+        
       } else {
         
         ### create matrix the describes the support for each observed state variable at time t
@@ -917,7 +937,7 @@ sda.enkf <- function(settings, obs.mean, obs.cov, IC = NULL, Q = NULL, adjustmen
     new.state  <- analysis
     
     ANALYSIS[[t]] <- analysis
-    if (interactive() & t > 1) { #
+    if (interactive() & t > 1 &F) { #
       t1 <- 1
       names.y <- unique(unlist(lapply(obs.mean[t1:t], function(x) { names(x) })))
       Ybar <- t(sapply(obs.mean[t1:t], function(x) {

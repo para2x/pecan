@@ -9,7 +9,7 @@
 
 ##' @title Read restart function for SDA with SIPNET
 ##' 
-##' @author Ann Raiho \email{araiho@@nd.edu}, Hamze Dokoohaki \email{hamzed@bu.edu}
+##' @author Ann Raiho \email{araiho@@nd.edu}
 ##' 
 ##' @inheritParams PEcAn.ModelName::read_restart.ModelName
 ##' 
@@ -17,87 +17,76 @@
 ##' 
 ##' @return X.vec      vector of forecasts
 ##' @export
-read_restart.SIPNET <- function(outdir, runid, stop.time, settings, var.names, params,
-                                var.map=list(c("leaf_carbon_content","litter_carbon_content","TotSoilCarb","SoilMoistFrac","SWE","GWBI",   "AbvGrndWood","AGB"),
-                                             c("LeafC",              "Litter",               "TotSoilCarb","SoilMoistFrac","SWE","GWBI",   "AbvGrndWood",'AGB'), # what we want
-                                             c('','','','','',                                                                   "kg/m^2/s","kg/m^2",  ""), # unit in
-                                             c('','','','','',                                                                   "Mg/ha/yr","Mg/ha",   ""), #unit out
-                                             c('','','','','',                                                                    mean,     "",        "") #preprocess function. Sending the function explicitly                                
-                                             ), 
-                                timez="UTC",
-                                When=NULL,
-                                control=list(trace=F),...
-                                ) {
-#see if there is something else coming
-  dots<-list(...)
-  if (length(dots)>0) lapply(names(dots),function(name){assign(name,dots[[name]], pos=1 )})
+read_restart.SIPNET <- function(outdir, runid, stop.time, settings, var.names, params) {
   
   prior.sla <- params[[which(!names(params) %in% c("soil", "soil_SDA", "restart"))[1]]]$SLA
-  forecast <- list()
-  # additional varnames, because we need these deterministic relationships
-  #  var.names <- c(var.names, "fine_root_carbon_content", "coarse_root_carbon_content")
-  # Read ensemble output
-
-  if("AbvGrndWood" %in% var.names) var.names<-c(var.names,'fine_root_carbon_content','coarse_root_carbon_content')
   
+  forecast <- list()
+  
+  # additional varnames, because we need these deterministic relationships
+  var.names <- c(var.names, "fine_root_carbon_content", "coarse_root_carbon_content")
+  
+  # Read ensemble output
   ens <- read.output(runid = runid, 
                      outdir = file.path(outdir, runid), 
                      start.year = lubridate::year(stop.time), 
                      end.year = lubridate::year(stop.time),
                      variables = var.names)
-  if(all(is.na(unlist(ens)))) PEcAn.logger::logger.error("No output has been generated. Either asking for the wrong year or error in simulation run.")
+  
+  last <- length(ens[[1]])
+  
   forecast <- list()
-  ##I'm kaing the timefrmae for the simulations given the year and the length of the output. leap years needs to be check for 30 or 31 in date
-  where.index<-c()
-  #When<-as.POSIXct(When,tz=timez) # making the timezone right for When
-  Timeframe<-seq(as.POSIXct(paste0(year(stop.time),"/01/01"),tz=timez),
-                 as.POSIXct(paste0(year(stop.time),"/12/30"),tz=timez),
-                 length.out = length(ens[[1]])
-                 )
-  trunc(Timeframe,"hours")->Timeframe
-  if(!is.null(When)){
-    #-- find the closest simulation to what is it asked
-    lapply(When,function(x){
-      which(abs(Timeframe-x) == min(abs(Timeframe - x)))[1]->ww
-      ww
-    })%>%unlist()%>%na.omit()%>%as.numeric()->where.index
-    
+  
+  
+  #### PEcAn Standard Outputs
+  if ("GWBI" %in% var.names) {
+    forecast[[length(forecast) + 1]] <- udunits2::ud.convert(mean(ens$GWBI),  "kg/m^2/s", "Mg/ha/yr")
+    names(forecast[[length(forecast)]]) <- c("GWBI")
   }
-  # removing the first and the last - when you ask for a different year that's not in time frime it would send out either the first or the last one
-  where.index<-where.index[where.index!=1 & where.index!=length(Timeframe)]
-  if(is.null(When) | length(where.index)==0)    where.index <- length(ens[[1]])
-
-  #The first vector in the arg is the model's title names for outputs and second is what we wanted it to be
-  # the third and fourth are the units in and out
-  purrr::pwalk(var.map,
-              function(modelT,ForcastT,unit.in,unit.out,FUN){
-      if(modelT%in%names(ens)){
-        # doing the proprocess - if we need to take mean or etc
-        if(typeof(FUN)!='character'){preproc.val<-FUN(unlist(ens[[modelT]]))}else{preproc.val<-ens[[modelT]][where.index]}
-        #do the unit conversion
-        if(unit.in!=''){value<-udunits2::ud.convert(preproc.val,unit.in,unit.out)}else{value<-preproc.val}
-        # print(str(value))
-        # store it back to forecast
-        forecast<<-c(forecast,setNames(list(value),ForcastT))
-      }          
-      
-  })
   
-  
-  # Finding some params-------------
   if ("AbvGrndWood" %in% var.names) {
+    forecast[[length(forecast) + 1]] <- udunits2::ud.convert(ens$AbvGrndWood[last],  "kg/m^2", "Mg/ha")
+    names(forecast[[length(forecast)]]) <- c("AbvGrndWood")
+    
     # calculate fractions, store in params, will use in write_restart
-    wood_total_C    <- ens$AbvGrndWood[where.index] + ens$fine_root_carbon_content[where.index] + ens$coarse_root_carbon_content[where.index]
-    abvGrndWoodFrac <- ens$AbvGrndWood[where.index]  / wood_total_C
-    coarseRootFrac  <- ens$coarse_root_carbon_content[where.index] / wood_total_C
-    fineRootFrac    <- ens$fine_root_carbon_content[where.index]   / wood_total_C
+    wood_total_C    <- ens$AbvGrndWood[last] + ens$fine_root_carbon_content[last] + ens$coarse_root_carbon_content[last]
+    abvGrndWoodFrac <- ens$AbvGrndWood[last]  / wood_total_C
+    coarseRootFrac  <- ens$coarse_root_carbon_content[last] / wood_total_C
+    fineRootFrac    <- ens$fine_root_carbon_content[last]   / wood_total_C
     params$restart <- c(abvGrndWoodFrac, coarseRootFrac, fineRootFrac)
+
+    if (length(params$restart)>0)
     names(params$restart) <- c("abvGrndWoodFrac", "coarseRootFrac", "fineRootFrac")
   }
   
-
-  #print(runid)
-  X_tmp <- list(X =unlist(forecast), params = params, When=Timeframe[where.index])
-                
+  if ("leaf_carbon_content" %in% var.names) {
+    forecast[[length(forecast) + 1]] <- ens$leaf_carbon_content[last]  ## kgC/m2*m2/kg*2kg/kgC
+    names(forecast[[length(forecast)]]) <- c("LeafC")
+  }
+  
+  if ("litter_carbon_content" %in% var.names) {
+    forecast[[length(forecast) + 1]] <- ens$litter_carbon_content[last]  ##kgC/m2
+    names(forecast[[length(forecast)]]) <- c("Litter")
+  }
+  
+  if ("TotSoilCarb" %in% var.names) {
+    forecast[[length(forecast) + 1]] <- ens$TotSoilCarb[last]  ## kgC/m2
+    names(forecast[[length(forecast)]]) <- c("TotSoilCarb")
+  }
+  
+  if ("SoilMoistFrac" %in% var.names) {
+    forecast[[length(forecast) + 1]] <- ens$SoilMoistFrac[last]  ## unitless
+    names(forecast[[length(forecast)]]) <- c("SoilMoistFrac")
+  }
+  
+  if ("SWE" %in% var.names) {
+    forecast[[length(forecast) + 1]] <- ens$SWE[last]  ## kgC/m2
+    names(forecast[[length(forecast)]]) <- c("SWE")
+  }
+  
+  print(runid)
+  
+  X_tmp <- list(X = unlist(forecast), params = params)
+  
   return(X_tmp)
 } # read_restart.SIPNET

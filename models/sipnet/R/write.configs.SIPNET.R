@@ -376,14 +376,18 @@ write.config.SIPNET <- function(defaults, trait.values, settings, run.id, inputs
   }  ## end loop over PFTS
   ####### end parameter update
 
+
   #### write INITIAL CONDITIONS here ####
   if (!is.null(IC)) {
     ic.names <- names(IC)
     ## plantWoodInit gC/m2
     plant_wood_vars <- c("AbvGrndWood", "abvGrndWoodFrac", "coarseRootFrac", "fineRootFrac")
     if (all(plant_wood_vars %in% ic.names)) {
+  
+      
       # reconstruct total wood C
       wood_total_C <- IC$AbvGrndWood / IC$abvGrndWoodFrac
+      print(IC$abvGrndWoodFrac)
       param[which(param[, 1] == "plantWoodInit"),  2] <- wood_total_C
       param[which(param[, 1] == "coarseRootFrac"), 2] <- IC$coarseRootFrac
       param[which(param[, 1] == "fineRootFrac"),   2] <- IC$fineRootFrac
@@ -465,7 +469,6 @@ write.config.SIPNET <- function(defaults, trait.values, settings, run.id, inputs
   }else{
     #some stuff about IC file that we can give in lieu of actual ICs
   }
-  
   if(file.exists(file.path(settings$rundir, run.id, "sipnet.param"))) file.rename(file.path(settings$rundir, run.id, "sipnet.param"),file.path(settings$rundir, run.id, paste0("sipnet",Sys.time()%>%as.numeric,".param")))
   write.table(param, file.path(settings$rundir, run.id, "sipnet.param"), row.names = FALSE, col.names = FALSE,
               quote = FALSE)

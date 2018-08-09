@@ -7,7 +7,8 @@ sda.enkf.refactored <- function(settings,
                                 control=list(trace=T,
                                              interactivePlot=T,
                                              TimeseriesPlot=T,
-                                             BiasPlot=F
+                                             BiasPlot=F,
+                                             plot.title=NULL
                                              ),...) {
   #My personal notes -----------------------
   # Two analysis function was initially developed into this:
@@ -140,6 +141,7 @@ sda.enkf.refactored <- function(settings,
   ### loop over time                                                    ###----
   ###-------------------------------------------------------------------### 
   while(t<nt){
+    browser()
     t<-t+1
     # do we have obs for this time - what year is it ?
     obs <- which(!is.na(obs.mean[[t]]))
@@ -158,6 +160,7 @@ sda.enkf.refactored <- function(settings,
                                 ensemble.id=ensemble.id)
     }else{
       restart.arg<-NULL
+      new.params <- params
     }
 #-------------------------- Writting the config/ Running the model and reading the outputs for each ensemble
 
@@ -177,7 +180,7 @@ sda.enkf.refactored <- function(settings,
     #------------------------------------------- Reading the output----------------------------------------
     X_tmp <- vector("list", 2) 
     X <- list()
-    new.params <- params
+  
     for (i in seq_len(nens)) {
 
       X_tmp[[i]] <- do.call(my.read_restart, args = list(outdir = outdir, 
@@ -194,13 +197,12 @@ sda.enkf.refactored <- function(settings,
       if (!is.null(X_tmp[[i]]$params)) new.params[[i]] <- X_tmp[[i]]$params
         
     }
-    
     X <- do.call(rbind, X)
     FORECAST[[t]] <- X
+    print(X)
     mu.f <- as.numeric(apply(X, 2, mean, na.rm = TRUE))
     Pf <- cov(X)
     diag(Pf)[which(diag(Pf) == 0)] <- 0.1 ## hack for zero variance
-
     ###-------------------------------------------------------------------###
     ###  preparing OBS                                                    ###
     ###-------------------------------------------------------------------###  
@@ -220,6 +222,7 @@ sda.enkf.refactored <- function(settings,
         diag(R)[which(diag(R)==0)] <- min(diag(R)[which(diag(R) != 0)])/2
         diag(Pf)[which(diag(Pf)==0)] <- min(diag(Pf)[which(diag(Pf) != 0)])/5
       }
+ 
  ###-------------------------------------------------------------------###
  ### Analysis                                                          ###
  ###-------------------------------------------------------------------###
@@ -282,6 +285,7 @@ sda.enkf.refactored <- function(settings,
     ###-------------------------------------------------------------------###
     ### adjustement/update state matrix                                   ###----
     ###-------------------------------------------------------------------### 
+
     if(adjustment == TRUE){
       analysis <-adj.ens(Pf,X,X.new,mu.f,mu.a,Pa,processvar)
     }else{
@@ -298,9 +302,10 @@ sda.enkf.refactored <- function(settings,
         analysis[analysis[,i] > int.save[2],i] <- int.save[2]
       }
     }
-    
+ 
     ## in the future will have to be separated from analysis
-    new.state  <- analysis
+    new.state  <- NULL#as.data.frame(analysis)
+    print(new.state)
     ANALYSIS[[t]] <- analysis
     ### Interactive plotting ------------------------------------------------------   
     if (t > 1 & control$interactivePlot) { #
@@ -315,7 +320,11 @@ sda.enkf.refactored <- function(settings,
   ###-------------------------------------------------------------------###
   ### time series plots                                                 ###-----
   ###-------------------------------------------------------------------### 
-  post.alaysis.ggplot(settings,t,obs.times,obs.mean,obs.cov,obs,X,FORECAST,ANALYSIS)
+
+  post.alaysis.ggplot(settings,t,obs.times,obs.mean,obs.cov,obs,X,FORECAST,ANALYSIS,plot.title=control$plot.title)
+  
+  post.alaysis.ggplot.violin(settings,t,obs.times,obs.mean,obs.cov,obs,X,FORECAST,ANALYSIS)
+
   #if(control$TimeseriesPlot) postana.timeser.plotting.sda(settings,t,obs.times,obs.mean,obs.cov,obs,X,FORECAST,ANALYSIS)
   ###-------------------------------------------------------------------###
   ### bias diagnostics                                                  ###----

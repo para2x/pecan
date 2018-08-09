@@ -317,18 +317,20 @@ postana.bias.plotting.sda<-function(t,obs.times,X,aqq,bqq){
 }
 
 #'@export
-post.alaysis.ggplot <- function(settings,t,obs.times,obs.mean,obs.cov,obs,X,FORECAST,ANALYSIS){
+post.alaysis.ggplot <- function(settings,t,obs.times,obs.mean,obs.cov,obs,X,FORECAST,ANALYSIS,plot.title=NULL){
+
   #Defining some colors
   t1         <- 1
   pink       <- col2rgb("deeppink")
-  alphapink  <- rgb(pink[1], pink[2], pink[3], 180, max = 255)
-  green      <- col2rgb("green")
-  alphagreen <- rgb(green[1], green[2], green[3], 75, max = 255)
+  purple     <- col2rgb("purple")
   blue       <- col2rgb("blue")
+  green      <- col2rgb("green")
+  brown      <- col2rgb("brown")
+  
+  alphapink  <- rgb(pink[1], pink[2], pink[3], 180, max = 255)
+  alphagreen <- rgb(green[1], green[2], green[3], 75, max = 255)
   alphablue  <- rgb(blue[1], blue[2], blue[3], 75, max = 255)
-  purple       <- col2rgb("purple")
   alphapurple <- rgb(purple[1], purple[2], purple[3], 75, max = 255)
-  brown       <- col2rgb("brown")
   alphabrown <- rgb(brown[1], brown[2], brown[3], 75, max = 255)
   ylab.names <- unlist(sapply(settings$state.data.assimilation$state.variable, 
                               function(x) { x })[2, ], use.names = FALSE)
@@ -386,24 +388,130 @@ post.alaysis.ggplot <- function(settings,t,obs.times,obs.mean,obs.cov,obs,X,FORE
     })%>%
     filter(Variables %in% var.names)%>%
     bind_rows(ready.FA)
+
+  ready.to.plot$Variables%>%unique()%>%
+    purrr::map(function(vari){
+      #finding the unit
+      unitp <- which(lapply(settings$state.data.assimilation$state.variable, "[", 'variable.name') %>% unlist %in% vari)
+      unit <- settings$state.data.assimilation$state.variable[[unitp]]$unit
+      #plotting
+      ready.to.plot%>%
+        filter(Variables==vari)%>%
+        ggplot(aes(x=Date))+
+        geom_ribbon(aes(ymin=`2.5%`,ymax=`97.5%`,fill=Type),color="black")+
+        geom_line(aes(y=means, color=Type),lwd=1.02,linetype=2)+
+        geom_point(aes(y=means, color=Type),size=3,alpha=0.75)+
+        geom_point(aes(y=`2.5%`, color=Type),size=2)+
+        geom_point(aes(y=`97.5%`, color=Type),size=2)+
+        scale_fill_manual(values = c(alphapink,alphagreen,alphablue),name="")+
+        scale_color_manual(values = c(alphapink,alphagreen,alphablue),name="")+
+        theme_bw(base_size = 17)+
+        labs(y=paste(vari,'(',unit,')'))+
+        theme(legend.position = "top",
+              strip.background = element_blank())->p
+      if (!is.null(plot.title)) p <- p + labs(title=plot.title)
+        p
+    })->all.plots
+
+  pdf("SDA.pdf",width = 10,height = 8)
+  all.plots%>%purrr::map(~print(.x))
+  dev.off()
+
+
   
-  colorP<-"Set1"
-  ready.to.plot%>%
-    ggplot(aes(x=Date))+
-    geom_ribbon(aes(ymin=`2.5%`,ymax=`97.5%`,fill=Type),alpha=0.75,color="black")+
-    geom_line(aes(y=means, color=Type),lwd=1.02,linetype=2)+
-    geom_point(aes(y=means, color=Type),size=2)+
-    geom_point(aes(y=`2.5%`, color=Type),size=2)+
-    geom_point(aes(y=`97.5%`, color=Type),size=2)+
-    facet_wrap(.~Variables,scales = "free")+
-    scale_fill_brewer(palette = colorP,name="",direction = -1)+
-    scale_color_brewer(palette = colorP,name="",direction = -1)+
-    theme_bw(base_size = 17)+
-    theme(legend.position = "top",
-          strip.background = element_blank())->pos.a.plot
+}
+
+
+#'@export
+post.alaysis.ggplot.violin <- function(settings,t,obs.times,obs.mean,obs.cov,obs,X,FORECAST,ANALYSIS){
   
-  ggsave("SDA.pdf",pos.a.plot,width = 12,height = 7)
+  #Defining some colors
+  t1         <- 1
+  pink       <- col2rgb("deeppink")
+  alphapink  <- rgb(pink[1], pink[2], pink[3], 180, max = 255)
+  green      <- col2rgb("green")
+  alphagreen <- rgb(green[1], green[2], green[3], 75, max = 255)
+  blue       <- col2rgb("blue")
+  alphablue  <- rgb(blue[1], blue[2], blue[3], 75, max = 255)
+  purple       <- col2rgb("purple")
+  alphapurple <- rgb(purple[1], purple[2], purple[3], 75, max = 255)
+  brown       <- col2rgb("brown")
+  alphabrown <- rgb(brown[1], brown[2], brown[3], 75, max = 255)
+  ylab.names <- unlist(sapply(settings$state.data.assimilation$state.variable, 
+                              function(x) { x })[2, ], use.names = FALSE)
+  var.names <- unlist(sapply(settings$state.data.assimilation$state.variable, 
+                             function(x) {
+                               x$variable.name
+                             }, 
+                             USE.NAMES = FALSE), 
+                      use.names = FALSE)
+
+#rearranging the forcast and analysis data  
+  All.my.data <- list(FORECAST=FORECAST,ANALYSIS=ANALYSIS)
   
+  c('FORECAST','ANALYSIS')%>%
+    purrr::map_df(function(listFA){
+      All.my.data[[listFA]]%>%
+        purrr::map_df(function(state.vars){
+          state.vars%>%as.data.frame()
+        })%>%mutate(Type=listFA,
+                    Date=rep(obs.times[t1:t], each=((All.my.data[[listFA]])[[1]]) %>% nrow())
+        )
+      
+    })%>%
+    tidyr::gather(Variables,Value,-c(Type,Date))->ready.FA
+  
+  #Observed data
+  #first merging mean and conv based on the day
+  obs.df <- names(obs.mean)%>%
+    purrr::map(~c(obs.mean[.x],obs.cov[.x],.x)%>%
+                 setNames(c('means','covs','Date')))%>%
+    setNames(names(obs.mean))%>%
+    purrr::map_df(function(one.day.data){
+      #CI
+      purrr::map2_df(sqrt(diag(one.day.data$covs)), one.day.data$means,
+                     function(sd,mean){
+                       data.frame(mean-(sd*1.96),mean+(sd*1.96))
+                       
+                     })%>%
+        mutate(Variables=colnames(one.day.data$means))%>%
+        `colnames<-`(c('2.5%','97.5%','Variables'))%>%
+        mutate(means=one.day.data$means%>%unlist,
+               Type="Data",
+               Date=one.day.data$Date%>%as.POSIXct())
+      
+      
+    })%>%
+    filter(Variables %in% var.names)
+ 
+
+  
+  ready.FA$Variables%>%unique()%>%
+    purrr::map(function(vari){
+      #finding the unit
+      unitp <- which(lapply(settings$state.data.assimilation$state.variable, "[", 'variable.name') %>% unlist %in% vari)
+      unit <- settings$state.data.assimilation$state.variable[[unitp]]$unit
+      #plotting
+      ready.FA%>%
+        filter(Variables==vari)%>%
+        ggplot(aes(Date,Value))+
+        geom_ribbon(aes(x=Date,y=means,ymin=`2.5%`,ymax=`97.5%`,fill=Type), data=obs.df %>% filter(Variables==vari), color="black")+
+        geom_line(aes(y=means, color=Type),data=obs.df%>% filter(Variables==vari),lwd=1.02,linetype=2)+
+        geom_violin(aes(x=Date,fill=Type,group=interaction(Date,Type)), position = position_dodge(width=0.9))+
+        geom_jitter(aes(color=Type), position=position_jitterdodge(dodge.width=0.9))+
+        scale_fill_manual(values = c(alphapink,alphagreen,alphablue))+
+        scale_color_manual(values = c(alphapink,alphagreen,alphablue))+
+        theme_bw(base_size = 17)+
+        labs(y=paste(vari,'(',unit,')'))+
+        theme(legend.position = "top",
+              strip.background = element_blank())->p
+      p
+    })->all.plots
+
+  pdf("SDA.Violin.pdf",width = 10,height = 8, onefile = TRUE)
+  all.plots%>%purrr::map(~print(.x))
+  dev.off()
   
   
 }
+
