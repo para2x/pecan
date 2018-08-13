@@ -18,7 +18,7 @@ EnKF<-function(setting,Forcast,Observed,...){
   dots<-list(...)
   if (length(dots)>0) lapply(names(dots),function(name){assign(name,dots[[name]])})
   for(i in seq_along(dots)) assign(names(dots)[i],dots[[names(dots)[i]]])
-  
+ 
 
   #General
   var.names <- unlist(sapply(settings$state.data.assimilation$state.variable, 
@@ -80,9 +80,14 @@ GEF<-function(setting,Forcast,Observed,...){
   #Observed inputs
   R<-Observed$R
   Y<-Observed$Y
-  #----------------------------------- GEF-----------------------------------------------------
+  wish.df <- function(Om, X, i, j, col) {
+    (Om[i, j]^2 + Om[i, i] * Om[j, j]) / var(X[, col])
+  }
+  
+   #----------------------------------- GEF-----------------------------------------------------
   # Taking care of censored data ------------------------------    
   ### create matrix the describes the support for each observed state variable at time t
+  path.to.models <- file.path(settings$outdir,"SDA","GEF")
   aqq<-extraArg$aqq
   bqq<-extraArg$bqq
   interval<-NULL
@@ -108,7 +113,7 @@ GEF<-function(setting,Forcast,Observed,...){
       x.censored[n,j] <- as.numeric(ifelse(X[n,j] > intervalX[j,2], 0, X[n,j])) #
     }
   }
-  
+
   if(t == 1){
     #The purpose of this step is to impute data for mu.f 
     #where there are zero values so that 
@@ -158,8 +163,20 @@ GEF<-function(setting,Forcast,Observed,...){
       ## indicator variable is set to 0, which specifies *not* to sample
       valueInCompiledNimbleFunction(Cmcmc_tobit2space$samplerFunctions[[samplerNumberOffset_tobit2space+i]], 'toggle', 1-x.ind[i])
     }
-    
+
+    #------------------Saving some of the objects that we need later on and on the next assimilation steps
+    if(!dir.exists(path.to.models)) dir.create(path.to.models)
+    save(Cmodel_tobit2space, Cmcmc_tobit2space, file = file.path(path.to.models, "GEF.nimbel.models.Rdata"))
   }else{
+    browser()
+    #use the model that was develop in the first time step
+    if(file.exists(file.path(path.to.models, "GEF.nimbel.models.Rdata"))){
+      load(file.path(path.to.models, "GEF.nimbel.models.Rdata"))
+    }else{
+      PEcAn.logger::logger.severe('The nimble model was not found.')
+    }
+      
+    
     Cmodel_tobit2space$y.ind <- x.ind
     Cmodel_tobit2space$y.censored <- x.censored
     
@@ -193,7 +210,7 @@ GEF<-function(setting,Forcast,Observed,...){
   
   X.new <- matrix(colMeans(dat.tobit2space[,iycens]),nrow(X),ncol(X))
   
-  if(sum(diag(Pf)-diag(cov(X))) > 10 | sum(diag(Pf)-diag(cov(X))) < -10) logger.severe('Increase Sample Size')
+ # if(sum(diag(Pf)-diag(cov(X))) > 10 | sum(diag(Pf)-diag(cov(X))) < -10) logger.severe('Increase Sample Size')
   
   ###-------------------------------------------------------------------###
   # Generalized Ensemble Filter                                       ###-----
@@ -334,6 +351,7 @@ GEF<-function(setting,Forcast,Observed,...){
               Pa = Pa,
               q.bar = q.bar,
               n = n,
+              X.new=X.new,
               CIX1=quantile(dat[, iX[2]], c(0.025, 0.5, 0.975)),  #7
               CIX2=quantile(dat[, iX[2]], c(0.025, 0.5, 0.975)),  #8
               aqq=aqq,

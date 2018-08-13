@@ -176,7 +176,7 @@ write_restart.LINKAGES <- function(outdir, runid, start.time, stop.time,
   dbh <- dbh[large.trees]
   iage <- iage[large.trees]
   nogro <- nogro[large.trees]
-  
+ 
   new.ntrees <- numeric(length(settings$pfts))
   
   print(paste0("ntrees (large trees) =", ntrees))  #these are the large trees
@@ -204,6 +204,7 @@ write_restart.LINKAGES <- function(outdir, runid, start.time, stop.time,
   #browser()
   # calculate number of individuals needed to match new.state
   for (s in seq_along(settings$pfts)) {
+
     if (ntrees[s] > 0) {
       fix_adjust <- new.state[s]/mean.biomass.spp[mean.biomass.spp[, 1] == s, 2]  # number of individuals needed to agree with new.state      
     } else {
@@ -223,7 +224,7 @@ write_restart.LINKAGES <- function(outdir, runid, start.time, stop.time,
   
   #making sure to stick with density dependence rules in linkages (< 198 trees per 800/m^2)
   #someday we could think about estimating this parameter from data
-  if(sum(new.ntrees) > 98) new.ntrees <- round((new.ntrees / sum(new.ntrees)) * runif(1,95,98))
+  if(sum(new.ntrees,na.rm = T) > 98) new.ntrees <- round((new.ntrees / sum(new.ntrees)) * runif(1,95,98))
   
   print(paste0("new.ntrees =", new.ntrees))
   

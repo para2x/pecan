@@ -373,12 +373,13 @@ post.alaysis.ggplot <- function(settings,t,obs.times,obs.mean,obs.cov,obs,X,FORE
     setNames(names(obs.mean))%>%
     purrr::map_df(function(one.day.data){
       #CI
+
       purrr::map2_df(sqrt(diag(one.day.data$covs)), one.day.data$means,
                      function(sd,mean){
                        data.frame(mean-(sd*1.96),mean+(sd*1.96))
                        
                      })%>%
-        mutate(Variables=colnames(one.day.data$means))%>%
+        mutate(Variables=names(one.day.data$means))%>%
         `colnames<-`(c('2.5%','97.5%','Variables'))%>%
         mutate(means=one.day.data$means%>%unlist,
                Type="Data",
@@ -386,14 +387,18 @@ post.alaysis.ggplot <- function(settings,t,obs.times,obs.mean,obs.cov,obs,X,FORE
       
       
     })%>%
-    filter(Variables %in% var.names)%>%
+    #filter(Variables %in% var.names)%>%
     bind_rows(ready.FA)
 
   ready.to.plot$Variables%>%unique()%>%
     purrr::map(function(vari){
+
+      varin<-vari
+      unit<-""
+      if (substr(vari,1,8)=="AGB.pft.") varin <- "AGB.pft"
       #finding the unit
-      unitp <- which(lapply(settings$state.data.assimilation$state.variable, "[", 'variable.name') %>% unlist %in% vari)
-      unit <- settings$state.data.assimilation$state.variable[[unitp]]$unit
+      unitp <- which(lapply(settings$state.data.assimilation$state.variable, "[", 'variable.name') %>% unlist %in% varin)
+      if (length(unitp)>0) unit <- settings$state.data.assimilation$state.variable[[unitp]]$unit
       #plotting
       ready.to.plot%>%
         filter(Variables==vari)%>%
@@ -401,8 +406,6 @@ post.alaysis.ggplot <- function(settings,t,obs.times,obs.mean,obs.cov,obs,X,FORE
         geom_ribbon(aes(ymin=`2.5%`,ymax=`97.5%`,fill=Type),color="black")+
         geom_line(aes(y=means, color=Type),lwd=1.02,linetype=2)+
         geom_point(aes(y=means, color=Type),size=3,alpha=0.75)+
-        geom_point(aes(y=`2.5%`, color=Type),size=2)+
-        geom_point(aes(y=`97.5%`, color=Type),size=2)+
         scale_fill_manual(values = c(alphapink,alphagreen,alphablue),name="")+
         scale_color_manual(values = c(alphapink,alphagreen,alphablue),name="")+
         theme_bw(base_size = 17)+
@@ -413,17 +416,20 @@ post.alaysis.ggplot <- function(settings,t,obs.times,obs.mean,obs.cov,obs,X,FORE
         p
     })->all.plots
 
-  pdf("SDA.pdf",width = 10,height = 8)
+
+  pdf("SDA/SDA.pdf",width = 10,height = 8)
   all.plots%>%purrr::map(~print(.x))
   dev.off()
 
-
+  #saving plot data
+  save(all.plots,ready.to.plot, file = file.path(settings$outdir,"SDA", "timeseries.plot.data.Rdata"))
+  
   
 }
 
 
 #'@export
-post.alaysis.ggplot.violin <- function(settings,t,obs.times,obs.mean,obs.cov,obs,X,FORECAST,ANALYSIS){
+post.alaysis.ggplot.violin <- function(settings,t,obs.times,obs.mean,obs.cov,obs,X,FORECAST,ANALYSIS,plot.title=NULL){
   
   #Defining some colors
   t1         <- 1
@@ -474,23 +480,27 @@ post.alaysis.ggplot.violin <- function(settings,t,obs.times,obs.mean,obs.cov,obs
                        data.frame(mean-(sd*1.96),mean+(sd*1.96))
                        
                      })%>%
-        mutate(Variables=colnames(one.day.data$means))%>%
+        mutate(Variables=names(one.day.data$means))%>%
         `colnames<-`(c('2.5%','97.5%','Variables'))%>%
         mutate(means=one.day.data$means%>%unlist,
                Type="Data",
                Date=one.day.data$Date%>%as.POSIXct())
       
       
-    })%>%
-    filter(Variables %in% var.names)
+    })#%>%
+    #filter(Variables %in% var.names)
  
 
   
   ready.FA$Variables%>%unique()%>%
     purrr::map(function(vari){
+      varin<-vari
+      unit<-""
+      if (substr(vari,1,8)=="AGB.pft.") varin <- "AGB.pft"
       #finding the unit
-      unitp <- which(lapply(settings$state.data.assimilation$state.variable, "[", 'variable.name') %>% unlist %in% vari)
-      unit <- settings$state.data.assimilation$state.variable[[unitp]]$unit
+      unitp <- which(lapply(settings$state.data.assimilation$state.variable, "[", 'variable.name') %>% unlist %in% varin)
+      if (length(unitp)>0) unit <- settings$state.data.assimilation$state.variable[[unitp]]$unit
+      #plotting
       #plotting
       ready.FA%>%
         filter(Variables==vari)%>%
@@ -505,13 +515,16 @@ post.alaysis.ggplot.violin <- function(settings,t,obs.times,obs.mean,obs.cov,obs
         labs(y=paste(vari,'(',unit,')'))+
         theme(legend.position = "top",
               strip.background = element_blank())->p
+      if (!is.null(plot.title)) p <- p + labs(title=plot.title)
       p
     })->all.plots
 
-  pdf("SDA.Violin.pdf",width = 10,height = 8, onefile = TRUE)
+  pdf("SDA/SDA.Violin.pdf",width = 10,height = 8, onefile = TRUE)
   all.plots%>%purrr::map(~print(.x))
   dev.off()
   
+  #saving plot data
+  save(all.plots,ready.FA,obs.df, file = file.path(settings$outdir,"SDA", "timeseries.violin.plot.data.Rdata"))
   
 }
 

@@ -25,7 +25,7 @@
 ##-------------------------------------------------------------------------------------------------#
 write.config.LINKAGES <- function(defaults = NULL, trait.values, settings, run.id, 
                                   restart = NULL, spinup = FALSE, inputs = NULL, IC = NULL) {
-  browser()
+
   # 850-869 repeated to fill 1000 years
   if (is.null(restart)) {
     restart <- FALSE # why not have restart default to FALSE above?

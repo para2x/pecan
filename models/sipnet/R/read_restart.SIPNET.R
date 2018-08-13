@@ -36,7 +36,7 @@ read_restart.SIPNET <- function(outdir, runid, stop.time, settings, var.names, p
   last <- length(ens[[1]])
   
   forecast <- list()
-  
+
   
   #### PEcAn Standard Outputs
   if ("GWBI" %in% var.names) {
